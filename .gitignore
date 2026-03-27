@@ -1,0 +1,6 @@
+echo ".env" > .gitignore
+echo "__pycache__/" >> .gitignore
+echo "*.csv" >> .gitignore
+echo "ngrok.exe" >> .gitignore
+echo "n8n_data/" >> .gitignore
+echo "pdfs/" >> .gitignore
