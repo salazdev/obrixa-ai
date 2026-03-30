@@ -23,9 +23,9 @@ import os
 load_dotenv()
 
 OPENAI_KEY = os.getenv("OPENAI_KEY")
-DB_URL      = os.getenv("postgresql://postgres.zomdvxmiqqwpxhxklpeb:ObrixaSalaz2024@aws-1-us-east-1.pooler.supabase.com:6543/postgres")
-SUPABASE_URL = os.getenv("zomdvxmiqqwpxhxklpeb")
-SUPABASE_KEY = os.getenv("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpvbWR2eG1pcXF3cHhoeGtscGViIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NzIwODksImV4cCI6MjA4OTQ0ODA4OX0.xLRYnXIvVl6nl6UvnL2z5A4aSvrU8b_pMpt5NMe0qAk")
+DB_URL = os.getenv("DB_URL")
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 #@app.post("/whatsapp-twilio")
 async def whatsapp_twilio(request: Request):
