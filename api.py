@@ -23,7 +23,7 @@ import os
 load_dotenv()
 
 OPENAI_KEY = os.getenv("OPENAI_KEY")
-DB_URL = os.getenv("DB_URL")
+DB_URL = os.getenv("DB_URL", "postgresql://postgres.zomdvxmiqqwpxhxklpeb:RxNVnNQo6bWMbbqN@aws-1-us-east-1.pooler.supabase.com:6543/postgres")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
