@@ -267,8 +267,15 @@ def consultar(req: ConsultaRequest):
                 "fuentes": []
             }
 
+        # Determinar tipo de búsqueda
+        tipo_busqueda = None
+        if req.modo == "ficha":
+            tipo_busqueda = "ficha_tecnica"
+        elif req.modo == "precio":
+            tipo_busqueda = "precio"
+
         # Buscar producto
-        resultados = buscar_documentos(req.pregunta)
+        resultados = buscar_documentos(req.pregunta, tipo=tipo_busqueda)
         if not resultados:
             return {
                 "respuesta": "No encontré información sobre ese producto. 🔍\n\nIntenta con palabras como: *teja, cemento, acero, piso, cielo raso, WPC*.",
