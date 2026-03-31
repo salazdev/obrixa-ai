@@ -245,6 +245,7 @@ def consultar(req: ConsultaRequest):
         
         # Detectar saludo inicial
         saludos = ["hola", "buenos", "buenas", "cotizar materiales", "quiero cotizar", "buen día"]
+        fichas = ["ficha técnica", "ficha tecnica", "necesito la ficha"]
         if any(s in mensaje_lower for s in saludos):
             return {
                 "respuesta": "¡Hola! 👋 Bienvenido a *OBRIXA AI*. Con mucho gusto te ayudo.\n\n¿Qué producto de construcción necesitas cotizar? Puedes preguntarme por tejas, cemento, acero, pisos, cielo raso y más. 🏗️",
