@@ -113,7 +113,7 @@ def quitar_tildes(s):
 # ---------------------------
 # FUNCIONES CORE
 # ---------------------------
-def buscar_documentos(pregunta: str):
+def buscar_documentos(pregunta: str, tipo: str = None):
     stopwords = {"que", "como", "cual", "para", "esto", "esta", "con",
                  "los", "las", "del", "una", "por", "cuales", "son",
                  "tiene", "hay", "dame", "dime", "cuanto", "cuesta",
@@ -123,15 +123,21 @@ def buscar_documentos(pregunta: str):
         palabras = pregunta.split()[:3]
 
     conn = get_conn()
-    cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    todos  = []
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    todos = []
     vistos = set()
     for palabra in palabras[:4]:
         for variante in [palabra, quitar_tildes(palabra)]:
-            cur.execute(
-                "SELECT * FROM embeddings WHERE contenido ILIKE %s LIMIT 8",
-                (f"%{variante}%",)
-            )
+            if tipo:
+                cur.execute(
+                    "SELECT * FROM embeddings WHERE contenido ILIKE %s AND tipo = %s LIMIT 8",
+                    (f"%{variante}%", tipo)
+                )
+            else:
+                cur.execute(
+                    "SELECT * FROM embeddings WHERE contenido ILIKE %s LIMIT 8",
+                    (f"%{variante}%",)
+                )
             for r in cur.fetchall():
                 if r["id"] not in vistos:
                     vistos.add(r["id"])
