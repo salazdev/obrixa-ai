@@ -242,17 +242,26 @@ def health():
 def consultar(req: ConsultaRequest):
     try:
         mensaje_lower = req.pregunta.lower().strip()
-        
+
+        # Detectar ficha técnica
+        fichas = ["ficha técnica", "ficha tecnica", "necesito la ficha"]
+        if any(f in mensaje_lower for f in fichas):
+            return {
+                "respuesta": "📋 Con gusto te envío la ficha técnica.\n\n¿De qué producto necesitas la ficha técnica? Puedes preguntarme por:\n\n• Teja UPVC\n• Teja Policarbonato\n• WPC Interior/Exterior\n• Piso Deck / Piso SPC\n• Cielo Raso\n\nEscribe el nombre del producto. 👇",
+                "fragmentos_encontrados": 0,
+                "fuentes": []
+            }
+
         # Detectar saludo inicial
         saludos = ["hola", "buenos", "buenas", "cotizar materiales", "quiero cotizar", "buen día"]
-        fichas = ["ficha técnica", "ficha tecnica", "necesito la ficha"]
         if any(s in mensaje_lower for s in saludos):
             return {
                 "respuesta": "¡Hola! 👋 Bienvenido a *OBRIXA AI*. Con mucho gusto te ayudo.\n\n¿Qué producto de construcción necesitas cotizar? Puedes preguntarme por tejas, cemento, acero, pisos, cielo raso y más. 🏗️",
                 "fragmentos_encontrados": 0,
                 "fuentes": []
             }
-        
+
+        # Buscar producto
         resultados = buscar_documentos(req.pregunta)
         if not resultados:
             return {
