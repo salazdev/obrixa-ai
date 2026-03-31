@@ -357,7 +357,7 @@ async def cargar_pdf(
     proveedor: str = Form(...)
 ):
     """
-    Carga un PDF y lo guarda en Supabase.
+    Carga un PDF y lo guarda en Supabase fragmentado por bloques lógicos.
     """
     try:
         contenido = await archivo.read()
@@ -371,10 +371,18 @@ async def cargar_pdf(
         if not texto.strip():
             raise HTTPException(status_code=400, detail="No se pudo leer el PDF")
 
-        chunks = [texto[i:i+1500] for i in range(0, len(texto), 1500)]
+        # Fragmentar por líneas agrupando de a 10 líneas
+        lineas = [l.strip() for l in texto.splitlines() if l.strip()]
+        chunks = []
+        for i in range(0, len(lineas), 10):
+            grupo = lineas[i:i+10]
+            chunk = "\n".join(grupo)
+            if len(chunk) > 20:
+                chunks.append(chunk)
+
         conn = get_conn()
-        cur  = conn.cursor()
-        ok   = 0
+        cur = conn.cursor()
+        ok = 0
         for chunk in chunks:
             try:
                 cur.execute(
@@ -389,7 +397,7 @@ async def cargar_pdf(
         conn.close()
 
         return {
-            "mensaje": f"PDF procesado correctamente",
+            "mensaje": "PDF procesado correctamente",
             "fragmentos_guardados": ok,
             "archivo": archivo.filename
         }
