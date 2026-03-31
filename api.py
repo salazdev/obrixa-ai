@@ -240,21 +240,28 @@ def health():
 
 @app.post("/consultar")
 def consultar(req: ConsultaRequest):
-    """
-    Consulta inteligente sobre materiales.
-    Usado por n8n y WhatsApp bot.
-    """
     try:
-        resultados = buscar_documentos(req.pregunta)
-        if not resultados:
+        mensaje_lower = req.pregunta.lower().strip()
+        
+        # Detectar saludo inicial
+        saludos = ["hola", "buenos", "buenas", "cotizar materiales", "quiero cotizar", "buen día"]
+        if any(s in mensaje_lower for s in saludos):
             return {
-                "respuesta": "No encontre informacion sobre ese producto. Intenta con otras palabras clave.",
+                "respuesta": "¡Hola! 👋 Bienvenido a *OBRIXA AI*. Con mucho gusto te ayudo.\n\n¿Qué producto de construcción necesitas cotizar? Puedes preguntarme por tejas, cemento, acero, pisos, cielo raso y más. 🏗️",
                 "fragmentos_encontrados": 0,
                 "fuentes": []
             }
-        contexto  = "\n\n".join([r["contenido"] for r in resultados])
+        
+        resultados = buscar_documentos(req.pregunta)
+        if not resultados:
+            return {
+                "respuesta": "No encontré información sobre ese producto. 🔍\n\nIntenta con palabras como: *teja, cemento, acero, piso, cielo raso, WPC*.",
+                "fragmentos_encontrados": 0,
+                "fuentes": []
+            }
+        contexto = "\n\n".join([r["contenido"] for r in resultados])
         respuesta = responder_con_ia(contexto, req.pregunta, req.modo)
-        fuentes   = list(set([r.get("fuente", "") for r in resultados]))
+        fuentes = list(set([r.get("fuente", "") for r in resultados]))
         return {
             "respuesta": respuesta,
             "fragmentos_encontrados": len(resultados),
@@ -262,7 +269,7 @@ def consultar(req: ConsultaRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
+        
 @app.post("/cotizar")
 def cotizar(req: CotizarRequest):
     """
