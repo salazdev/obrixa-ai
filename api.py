@@ -80,6 +80,8 @@ async def add_ngrok_header(request, call_next):
 class ConsultaRequest(BaseModel):
     pregunta: str
     modo: Optional[str] = "general"
+    telefono: Optional[str] = None
+    nombre: Optional[str] = None
 
 class CotizarRequest(BaseModel):
     categoria: str
@@ -272,6 +274,9 @@ def health():
 def consultar(req: ConsultaRequest):
     try:
         mensaje_lower = req.pregunta.lower().strip()
+        # Registrar cliente automáticamente
+        if hasattr(req, 'telefono') and req.telefono:
+            registrar_cliente(req.telefono, req.nombre if hasattr(req, 'nombre') else None)
 
         # Detectar solicitud de ficha técnica (frases exactas)
         fichas = ["ficha técnica", "ficha tecnica", "necesito la ficha", "datos tecnicos", "datos técnicos"]
