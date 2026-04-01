@@ -109,7 +109,23 @@ def quitar_tildes(s):
         c for c in unicodedata.normalize('NFD', s)
         if unicodedata.category(c) != 'Mn'
     )
-
+def registrar_cliente(telefono: str, nombre: str = None):
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO clientes (telefono, nombre, primer_contacto, ultimo_contacto, total_consultas)
+            VALUES (%s, %s, now(), now(), 1)
+            ON CONFLICT (telefono) DO UPDATE SET
+                ultimo_contacto = now(),
+                total_consultas = clientes.total_consultas + 1,
+                nombre = COALESCE(EXCLUDED.nombre, clientes.nombre)
+        """, (telefono, nombre))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error registrando cliente: {e}")
 # ---------------------------
 # FUNCIONES CORE
 # ---------------------------
