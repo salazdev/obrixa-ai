@@ -249,12 +249,11 @@ def consultar(req: ConsultaRequest):
     try:
         mensaje_lower = req.pregunta.lower().strip()
 
-        # Detectar ficha técnica
-        fichas = ["ficha técnica", "ficha tecnica", "necesito la ficha", "ficha", "caracteristicas", "características", "especificaciones"]
+        # Detectar solicitud de ficha técnica (frases exactas)
+        fichas = ["ficha técnica", "ficha tecnica", "necesito la ficha", "datos tecnicos", "datos técnicos"]
         es_ficha = any(f in mensaje_lower for f in fichas)
 
         if es_ficha:
-            # Verificar si ya mencionó el producto
             resultados = buscar_documentos(req.pregunta, tipo="ficha_tecnica")
             if not resultados:
                 return {
@@ -272,7 +271,7 @@ def consultar(req: ConsultaRequest):
             }
 
         # Detectar saludo inicial
-        saludos = ["hola", "buenos", "buenas", "cotizar materiales", "quiero cotizar", "buen día"]
+        saludos = ["hola", "buenos", "buenas", "cotizar materiales", "quiero cotizar", "buen día", "consultar precios", "quiero consultar"]
         if any(s in mensaje_lower for s in saludos):
             return {
                 "respuesta": "¡Hola! 👋 Bienvenido a *OBRIXA AI*. Con mucho gusto te ayudo.\n\n¿Qué producto de construcción necesitas cotizar? Puedes preguntarme por tejas, cemento, acero, pisos, cielo raso y más. 🏗️",
@@ -280,15 +279,8 @@ def consultar(req: ConsultaRequest):
                 "fuentes": []
             }
 
-        # Determinar tipo de búsqueda
-        tipo_busqueda = None
-        if req.modo == "ficha":
-            tipo_busqueda = "ficha_tecnica"
-        elif req.modo == "precio":
-            tipo_busqueda = "precio"
-
-        # Buscar producto
-        resultados = buscar_documentos(req.pregunta, tipo=tipo_busqueda)
+        # Buscar producto en precios
+        resultados = buscar_documentos(req.pregunta, tipo="precio")
         if not resultados:
             return {
                 "respuesta": "No encontré información sobre ese producto. 🔍\n\nIntenta con palabras como: *teja, cemento, acero, piso, cielo raso, WPC*.",
