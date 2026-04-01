@@ -274,9 +274,10 @@ def health():
 def consultar(req: ConsultaRequest):
     try:
         mensaje_lower = req.pregunta.lower().strip()
+        
         # Registrar cliente automáticamente
-        if hasattr(req, 'telefono') and req.telefono:
-            registrar_cliente(req.telefono, req.nombre if hasattr(req, 'nombre') else None)
+        if req.telefono:
+            registrar_cliente(req.telefono, req.nombre)
 
         # Detectar solicitud de ficha técnica (frases exactas)
         fichas = ["ficha técnica", "ficha tecnica", "necesito la ficha", "datos tecnicos", "datos técnicos"]
