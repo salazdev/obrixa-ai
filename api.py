@@ -332,25 +332,24 @@ def consultar(req: ConsultaRequest):
             datos = sesion["datos"] or {}
 
             # Flujo de cotización
-            if estado == "esperando_material":
-                if "teja" in mensaje_lower:
-                    set_sesion(telefono, "esperando_area", "teja", {})
-                    return {"respuesta": "🏗️ Perfecto. ¿Cuántos m² tiene el techo que vas a cubrir?", "fragmentos_encontrados": 0, "fuentes": []}
-                elif "pintura" in mensaje_lower:
-                    set_sesion(telefono, "esperando_area", "pintura", {})
-                    return {"respuesta": "🎨 Perfecto. ¿Cuántos m² vas a pintar?", "fragmentos_encontrados": 0, "fuentes": []}
-                elif "cemento" in mensaje_lower:
-                    set_sesion(telefono, "esperando_area", "cemento", {})
-                    return {"respuesta": "🏚️ Perfecto. ¿Cuántos m² vas a cubrir con cemento?", "fragmentos_encontrados": 0, "fuentes": []}
-                elif "hierro" in mensaje_lower or "acero" in mensaje_lower or "varilla" in mensaje_lower:
-                    set_sesion(telefono, "esperando_longitud", "acero", {})
-                    return {"respuesta": "⚙️ Perfecto. ¿Cuántos metros lineales de hierro necesitas?", "fragmentos_encontrados": 0, "fuentes": []}
-                elif "ladrillo" in mensaje_lower:
-                    set_sesion(telefono, "esperando_area", "ladrillo", {})
-                    return {"respuesta": "🧱 Perfecto. ¿Cuántos m² de muro vas a construir?", "fragmentos_encontrados": 0, "fuentes": []}
-                else:
-                    return {"respuesta": "Por favor elige uno de estos materiales:\n\n1️⃣ Teja\n2️⃣ Pintura\n3️⃣ Cemento\n4️⃣ Hierro/Varilla\n5️⃣ Ladrillo", "fragmentos_encontrados": 0, "fuentes": []}
-
+            elif estado == "esperando_material":
+    if any(x in mensaje_lower for x in ["teja", "1", "uno"]):
+        set_sesion(telefono, "esperando_area", "teja", {})
+        return {"respuesta": "🏗️ Perfecto. ¿Cuántos m² tiene el techo que vas a cubrir?", "fragmentos_encontrados": 0, "fuentes": []}
+    elif any(x in mensaje_lower for x in ["pintura", "2", "dos"]):
+        set_sesion(telefono, "esperando_area", "pintura", {})
+        return {"respuesta": "🎨 Perfecto. ¿Cuántos m² vas a pintar?", "fragmentos_encontrados": 0, "fuentes": []}
+    elif any(x in mensaje_lower for x in ["cemento", "3", "tres"]):
+        set_sesion(telefono, "esperando_area", "cemento", {})
+        return {"respuesta": "🏚️ Perfecto. ¿Cuántos m² vas a cubrir con cemento?", "fragmentos_encontrados": 0, "fuentes": []}
+    elif any(x in mensaje_lower for x in ["hierro", "acero", "varilla", "4", "cuatro"]):
+        set_sesion(telefono, "esperando_longitud", "acero", {})
+        return {"respuesta": "⚙️ Perfecto. ¿Cuántos metros lineales de hierro necesitas?", "fragmentos_encontrados": 0, "fuentes": []}
+    elif any(x in mensaje_lower for x in ["ladrillo", "5", "cinco"]):
+        set_sesion(telefono, "esperando_area", "ladrillo", {})
+        return {"respuesta": "🧱 Perfecto. ¿Cuántos m² de muro vas a construir?", "fragmentos_encontrados": 0, "fuentes": []}
+    else:
+        return {"respuesta": "Por favor elige uno de estos materiales:\n\n1️⃣ Teja\n2️⃣ Pintura\n3️⃣ Cemento\n4️⃣ Hierro/Varilla\n5️⃣ Ladrillo", "fragmentos_encontrados": 0, "fuentes": []}
             elif estado == "esperando_area":
                 try:
                     area = float(''.join(filter(lambda x: x.isdigit() or x == '.', mensaje_lower)))
