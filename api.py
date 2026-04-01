@@ -147,19 +147,27 @@ def buscar_documentos(pregunta: str, tipo: str = None):
     return todos[:10]
 
 def responder_con_ia(contexto: str, pregunta: str, modo: str = "general") -> str:
-    system = (
-        "Eres experto en materiales de construccion colombianos. "
-        "Usa el contexto para responder con precios, unidades y especificaciones. "
-        "Si hay tablas de precios en el contexto, extrae y muestra los valores. "
-        "Se conciso y directo. Responde en espanol."
-    )
+    if modo == "ficha":
+        system = (
+            "Eres experto en materiales de construccion colombianos. "
+            "Presenta la ficha tecnica del producto de forma clara y concisa. "
+            "Incluye: caracteristicas principales, dimensiones clave y datos tecnicos importantes. "
+            "Maximo 5 puntos. Usa formato simple sin markdown. Responde en espanol."
+        )
+    else:
+        system = (
+            "Eres experto en materiales de construccion colombianos. "
+            "Usa el contexto para responder con precios, unidades y especificaciones. "
+            "Si hay tablas de precios en el contexto, extrae y muestra los valores. "
+            "Se conciso y directo. Responde en espanol."
+        )
     resp = openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": system},
-            {"role": "user",   "content": f"Contexto:\n{contexto}\n\nPregunta: {pregunta}"}
+            {"role": "user", "content": f"Contexto:\n{contexto}\n\nPregunta: {pregunta}"}
         ],
-        max_tokens=800
+        max_tokens=500
     )
     return resp.choices[0].message.content
 
