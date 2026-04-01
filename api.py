@@ -16,8 +16,6 @@ from bs4 import BeautifulSoup
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi import Request
 from fastapi.responses import Response
-
-
 from dotenv import load_dotenv
 import os
 load_dotenv()
@@ -27,32 +25,6 @@ DB_URL = os.getenv("DB_URL", "postgresql://postgres.zomdvxmiqqwpxhxklpeb:RxNVnNQ
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-#@app.post("/whatsapp-twilio")
-async def whatsapp_twilio(request: Request):
-    """Recibe mensajes de WhatsApp via Twilio."""
-    form = await request.form()
-    mensaje  = form.get("Body", "")
-    telefono = form.get("From", "").replace("whatsapp:", "")
-    nombre   = form.get("ProfileName", "Cliente")
-
-    # Busca respuesta en OBRIXA
-    resultados = buscar_documentos(mensaje)
-    if not resultados:
-        respuesta = f"Hola {nombre}! No encontre informacion sobre *{mensaje}*. Intenta con el nombre exacto del producto."
-    else:
-        contexto  = "\n\n".join([r["contenido"] for r in resultados])
-        respuesta = responder_con_ia(contexto, mensaje, "precios")
-        respuesta = f"Hola {nombre}!\n\n{respuesta}"
-
-    # Responde en formato TwiML que Twilio entiende
-    twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<Response>
-    <Message>{respuesta}</Message>
-</Response>"""
-
-    from fastapi.responses import Response
-    return Response(content=twiml, media_type="application/xml")
-
 openai_client = OpenAI(api_key=OPENAI_KEY)
 
 app = FastAPI(
@@ -61,7 +33,6 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Permite conexiones desde cualquier origen (n8n, WhatsApp, etc.)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -74,6 +45,7 @@ async def add_ngrok_header(request, call_next):
     response = await call_next(request)
     response.headers["ngrok-skip-browser-warning"] = "true"
     return response
+
 # ---------------------------
 # MODELOS
 # ---------------------------
@@ -111,6 +83,10 @@ def quitar_tildes(s):
         c for c in unicodedata.normalize('NFD', s)
         if unicodedata.category(c) != 'Mn'
     )
+
+# ---------------------------
+# FUNCIONES CORE
+# ---------------------------
 def registrar_cliente(telefono: str, nombre: str = None):
     try:
         conn = get_conn()
@@ -170,9 +146,7 @@ def borrar_sesion(telefono: str):
         conn.close()
     except:
         pass
-# ---------------------------
-# FUNCIONES CORE
-# ---------------------------
+
 def buscar_documentos(pregunta: str, tipo: str = None):
     stopwords = {"que", "como", "cual", "para", "esto", "esta", "con",
                  "los", "las", "del", "una", "por", "cuales", "son",
@@ -181,7 +155,6 @@ def buscar_documentos(pregunta: str, tipo: str = None):
     palabras = [p for p in pregunta.split() if len(p) >= 2 and p.lower() not in stopwords]
     if not palabras:
         palabras = pregunta.split()[:3]
-
     conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     todos = []
@@ -236,7 +209,7 @@ def calcular_material(categoria, area=0, largo=0, ancho=0, grosor=0,
                       traslapo=0, num_manos=1):
     if categoria == "pintura":
         area_total = area * num_manos
-        galones    = math.ceil(area_total / cobertura) if cobertura > 0 else 0
+        galones = math.ceil(area_total / cobertura) if cobertura > 0 else 0
         return {
             "area_m2": round(area, 2),
             "manos": num_manos,
@@ -248,8 +221,8 @@ def calcular_material(categoria, area=0, largo=0, ancho=0, grosor=0,
             "unidad": "galones"
         }
     elif categoria in ["teja", "baldosa", "ladrillo"]:
-        au   = largo * ancho
-        act  = area * (1 + traslapo)
+        au = largo * ancho
+        act = area * (1 + traslapo)
         cant = math.ceil(act / au) if au > 0 else 0
         return {
             "area_m2": round(area, 2),
@@ -262,7 +235,7 @@ def calcular_material(categoria, area=0, largo=0, ancho=0, grosor=0,
             "unidad": "unidades"
         }
     elif categoria == "cemento":
-        vol  = area * grosor
+        vol = area * grosor
         cant = math.ceil(vol * rendimiento)
         return {
             "area_m2": round(area, 2),
@@ -290,20 +263,19 @@ def calcular_material(categoria, area=0, largo=0, ancho=0, grosor=0,
 # ---------------------------
 # ENDPOINTS
 # ---------------------------
-
 @app.get("/")
 def root():
     return {
         "mensaje": "OBRIXA AI API funcionando",
         "version": "1.0.0",
-        "endpoints": ["/consultar", "/cotizar", "/precios", "/whatsapp", "/health"]
+        "endpoints": ["/consultar", "/cotizar", "/precios", "/health"]
     }
 
 @app.get("/health")
 def health():
     try:
         conn = get_conn()
-        cur  = conn.cursor()
+        cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM embeddings")
         count = cur.fetchone()[0]
         cur.close()
@@ -331,25 +303,25 @@ def consultar(req: ConsultaRequest):
             material = sesion["material"]
             datos = sesion["datos"] or {}
 
-            # Flujo de cotización
-            elif estado == "esperando_material":
-    if any(x in mensaje_lower for x in ["teja", "1", "uno"]):
-        set_sesion(telefono, "esperando_area", "teja", {})
-        return {"respuesta": "🏗️ Perfecto. ¿Cuántos m² tiene el techo que vas a cubrir?", "fragmentos_encontrados": 0, "fuentes": []}
-    elif any(x in mensaje_lower for x in ["pintura", "2", "dos"]):
-        set_sesion(telefono, "esperando_area", "pintura", {})
-        return {"respuesta": "🎨 Perfecto. ¿Cuántos m² vas a pintar?", "fragmentos_encontrados": 0, "fuentes": []}
-    elif any(x in mensaje_lower for x in ["cemento", "3", "tres"]):
-        set_sesion(telefono, "esperando_area", "cemento", {})
-        return {"respuesta": "🏚️ Perfecto. ¿Cuántos m² vas a cubrir con cemento?", "fragmentos_encontrados": 0, "fuentes": []}
-    elif any(x in mensaje_lower for x in ["hierro", "acero", "varilla", "4", "cuatro"]):
-        set_sesion(telefono, "esperando_longitud", "acero", {})
-        return {"respuesta": "⚙️ Perfecto. ¿Cuántos metros lineales de hierro necesitas?", "fragmentos_encontrados": 0, "fuentes": []}
-    elif any(x in mensaje_lower for x in ["ladrillo", "5", "cinco"]):
-        set_sesion(telefono, "esperando_area", "ladrillo", {})
-        return {"respuesta": "🧱 Perfecto. ¿Cuántos m² de muro vas a construir?", "fragmentos_encontrados": 0, "fuentes": []}
-    else:
-        return {"respuesta": "Por favor elige uno de estos materiales:\n\n1️⃣ Teja\n2️⃣ Pintura\n3️⃣ Cemento\n4️⃣ Hierro/Varilla\n5️⃣ Ladrillo", "fragmentos_encontrados": 0, "fuentes": []}
+            if estado == "esperando_material":
+                if any(x in mensaje_lower for x in ["teja", "1", "uno"]):
+                    set_sesion(telefono, "esperando_area", "teja", {})
+                    return {"respuesta": "🏗️ Perfecto. ¿Cuántos m² tiene el techo que vas a cubrir?", "fragmentos_encontrados": 0, "fuentes": []}
+                elif any(x in mensaje_lower for x in ["pintura", "2", "dos"]):
+                    set_sesion(telefono, "esperando_area", "pintura", {})
+                    return {"respuesta": "🎨 Perfecto. ¿Cuántos m² vas a pintar?", "fragmentos_encontrados": 0, "fuentes": []}
+                elif any(x in mensaje_lower for x in ["cemento", "3", "tres"]):
+                    set_sesion(telefono, "esperando_area", "cemento", {})
+                    return {"respuesta": "🏚️ Perfecto. ¿Cuántos m² vas a cubrir con cemento?", "fragmentos_encontrados": 0, "fuentes": []}
+                elif any(x in mensaje_lower for x in ["hierro", "acero", "varilla", "4", "cuatro"]):
+                    set_sesion(telefono, "esperando_longitud", "acero", {})
+                    return {"respuesta": "⚙️ Perfecto. ¿Cuántos metros lineales de hierro necesitas?", "fragmentos_encontrados": 0, "fuentes": []}
+                elif any(x in mensaje_lower for x in ["ladrillo", "5", "cinco"]):
+                    set_sesion(telefono, "esperando_area", "ladrillo", {})
+                    return {"respuesta": "🧱 Perfecto. ¿Cuántos m² de muro vas a construir?", "fragmentos_encontrados": 0, "fuentes": []}
+                else:
+                    return {"respuesta": "Por favor elige uno de estos materiales:\n\n1️⃣ Teja\n2️⃣ Pintura\n3️⃣ Cemento\n4️⃣ Hierro/Varilla\n5️⃣ Ladrillo", "fragmentos_encontrados": 0, "fuentes": []}
+
             elif estado == "esperando_area":
                 try:
                     area = float(''.join(filter(lambda x: x.isdigit() or x == '.', mensaje_lower)))
@@ -418,35 +390,30 @@ def consultar(req: ConsultaRequest):
                 try:
                     precio = float(''.join(filter(lambda x: x.isdigit() or x == '.', mensaje_lower)))
                     datos["precio_unitario"] = precio
-
-                    # Calcular según material
                     if material == "teja":
-                        largo, ancho = 11.80, 1.075
-                        resultado = calcular_material("teja", area=datos["area"], largo=largo, ancho=ancho, precio_unitario=precio, traslapo=0.1)
+                        resultado = calcular_material("teja", area=datos["area"], largo=11.80, ancho=1.075, precio_unitario=precio, traslapo=0.1)
                         borrar_sesion(telefono)
-                        return {"respuesta": f"🧮 *Cotización Teja UPVC*\n\nÁrea: {resultado['area_m2']} m²\nCantidad tejas: {resultado['cantidad']} unidades\nPrecio unitario: ${precio:,.0f}\nTotal estimado: ${resultado['precio_total']:,.0f}\n\n¿Deseas confirmar el pedido? Responde *SI* para continuar.", "fragmentos_encontrados": 0, "fuentes": []}
+                        return {"respuesta": f"🧮 *Cotización Teja UPVC*\n\nÁrea: {resultado['area_m2']} m²\nCantidad: {resultado['cantidad']} tejas\nPrecio unitario: ${precio:,.0f}\nTotal estimado: ${resultado['precio_total']:,.0f}\n\n¿Deseas confirmar el pedido? Responde *SI* para continuar.", "fragmentos_encontrados": 0, "fuentes": []}
                     elif material == "pintura":
                         resultado = calcular_material("pintura", area=datos["area"], cobertura=datos["cobertura"], precio_unitario=precio, num_manos=datos["num_manos"])
                         borrar_sesion(telefono)
-                        return {"respuesta": f"🧮 *Cotización Pintura*\n\nÁrea: {resultado['area_m2']} m²\nManos: {resultado['manos']}\nGalones necesarios: {resultado['galones_necesarios']}\nPrecio por galón: ${precio:,.0f}\nTotal estimado: ${resultado['precio_total']:,.0f}\n\n¿Deseas confirmar el pedido? Responde *SI* para continuar.", "fragmentos_encontrados": 0, "fuentes": []}
+                        return {"respuesta": f"🧮 *Cotización Pintura*\n\nÁrea: {resultado['area_m2']} m²\nManos: {resultado['manos']}\nGalones: {resultado['galones_necesarios']}\nPrecio/galón: ${precio:,.0f}\nTotal estimado: ${resultado['precio_total']:,.0f}\n\n¿Deseas confirmar el pedido? Responde *SI* para continuar.", "fragmentos_encontrados": 0, "fuentes": []}
                     elif material == "cemento":
                         resultado = calcular_material("cemento", area=datos["area"], grosor=datos["grosor"], rendimiento=datos["rendimiento"], precio_unitario=precio)
                         borrar_sesion(telefono)
-                        return {"respuesta": f"🧮 *Cotización Cemento*\n\nÁrea: {resultado['area_m2']} m²\nVolumen: {resultado['volumen_m3']} m³\nSacos necesarios: {resultado['cantidad_sacos']}\nPrecio por saco: ${precio:,.0f}\nTotal estimado: ${resultado['precio_total']:,.0f}\n\n¿Deseas confirmar el pedido? Responde *SI* para continuar.", "fragmentos_encontrados": 0, "fuentes": []}
+                        return {"respuesta": f"🧮 *Cotización Cemento*\n\nÁrea: {resultado['area_m2']} m²\nVolumen: {resultado['volumen_m3']} m³\nSacos: {resultado['cantidad_sacos']}\nPrecio/saco: ${precio:,.0f}\nTotal estimado: ${resultado['precio_total']:,.0f}\n\n¿Deseas confirmar el pedido? Responde *SI* para continuar.", "fragmentos_encontrados": 0, "fuentes": []}
                     elif material == "acero":
                         resultado = calcular_material("acero", largo=datos["largo"], precio_unitario=precio)
                         borrar_sesion(telefono)
-                        return {"respuesta": f"🧮 *Cotización Hierro/Acero*\n\nLongitud: {resultado['longitud_m']} m\nVarillas 12m: {resultado['varillas_12m']}\nPrecio por varilla: ${precio:,.0f}\nTotal estimado: ${resultado['precio_total']:,.0f}\n\n¿Deseas confirmar el pedido? Responde *SI* para continuar.", "fragmentos_encontrados": 0, "fuentes": []}
+                        return {"respuesta": f"🧮 *Cotización Hierro*\n\nLongitud: {resultado['longitud_m']} m\nVarillas 12m: {resultado['varillas_12m']}\nPrecio/varilla: ${precio:,.0f}\nTotal estimado: ${resultado['precio_total']:,.0f}\n\n¿Deseas confirmar el pedido? Responde *SI* para continuar.", "fragmentos_encontrados": 0, "fuentes": []}
                     elif material == "ladrillo":
-                        area = datos["area"]
-                        largo, ancho = 0.38, 0.14
-                        resultado = calcular_material("ladrillo", area=area, largo=largo, ancho=ancho, precio_unitario=precio, traslapo=0.05)
+                        resultado = calcular_material("ladrillo", area=datos["area"], largo=0.38, ancho=0.14, precio_unitario=precio, traslapo=0.05)
                         borrar_sesion(telefono)
-                        return {"respuesta": f"🧮 *Cotización Ladrillo*\n\nÁrea muro: {resultado['area_m2']} m²\nLadrillos necesarios: {resultado['cantidad']} unidades\nPrecio unitario: ${precio:,.0f}\nTotal estimado: ${resultado['precio_total']:,.0f}\n\n¿Deseas confirmar el pedido? Responde *SI* para continuar.", "fragmentos_encontrados": 0, "fuentes": []}
+                        return {"respuesta": f"🧮 *Cotización Ladrillo*\n\nÁrea: {resultado['area_m2']} m²\nLadrillos: {resultado['cantidad']} unidades\nPrecio unitario: ${precio:,.0f}\nTotal estimado: ${resultado['precio_total']:,.0f}\n\n¿Deseas confirmar el pedido? Responde *SI* para continuar.", "fragmentos_encontrados": 0, "fuentes": []}
                 except:
                     return {"respuesta": "Por favor escribe solo el precio en números. Ejemplo: *350000*", "fragmentos_encontrados": 0, "fuentes": []}
 
-        # Detectar solicitud de ficha técnica (frases exactas)
+        # Detectar solicitud de ficha técnica
         fichas = ["ficha técnica", "ficha tecnica", "necesito la ficha", "datos tecnicos", "datos técnicos"]
         es_ficha = any(f in mensaje_lower for f in fichas)
         if es_ficha:
@@ -459,14 +426,14 @@ def consultar(req: ConsultaRequest):
             return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
 
         # Detectar solicitud de cotización
-        cotizar_keywords = ["cotizar", "cotización", "cotizacion", "cuanto sale", "cuánto sale", "cuanto cuesta", "cuánto cuesta", "necesito calcular"]
+        cotizar_keywords = ["cotizar", "cotización", "cotizacion", "cuanto sale", "cuánto sale", "necesito calcular"]
         if any(k in mensaje_lower for k in cotizar_keywords):
             if telefono:
                 set_sesion(telefono, "esperando_material", None, {})
             return {"respuesta": "🏗️ Con gusto te ayudo a cotizar.\n\n¿Qué material necesitas?\n\n1️⃣ Teja\n2️⃣ Pintura\n3️⃣ Cemento\n4️⃣ Hierro/Varilla\n5️⃣ Ladrillo", "fragmentos_encontrados": 0, "fuentes": []}
 
         # Detectar saludo inicial
-        saludos = ["hola", "buenos", "buenas", "cotizar materiales", "quiero cotizar", "buen día", "consultar precios", "quiero consultar"]
+        saludos = ["hola", "buenos", "buenas", "buen dia", "buen día", "consultar precios", "quiero consultar"]
         if any(s in mensaje_lower for s in saludos):
             return {"respuesta": "¡Hola! 👋 Bienvenido a *OBRIXA AI*. Con mucho gusto te ayudo.\n\n¿Qué necesitas hoy?\n\n🔍 Consultar *precios*\n📋 Ver *ficha técnica*\n🧮 *Cotizar* materiales", "fragmentos_encontrados": 0, "fuentes": []}
 
@@ -481,12 +448,9 @@ def consultar(req: ConsultaRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-        
+
 @app.post("/cotizar")
 def cotizar(req: CotizarRequest):
-    """
-    Calcula cantidades y precios de materiales.
-    """
     try:
         resultado = calcular_material(
             categoria=req.categoria,
@@ -508,12 +472,9 @@ def cotizar(req: CotizarRequest):
 
 @app.get("/precios/{nombre_producto}")
 def buscar_precios(nombre_producto: str):
-    """
-    Busca precios de un producto en la base de datos.
-    """
     try:
         conn = get_conn()
-        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(
             "SELECT * FROM precios WHERE producto ILIKE %s LIMIT 20",
             (f"%{nombre_producto}%",)
@@ -525,59 +486,12 @@ def buscar_precios(nombre_producto: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/whatsapp")
-def whatsapp_webhook(req: WhatsAppRequest):
-    """
-    Endpoint principal para el bot de WhatsApp via n8n.
-    Recibe mensaje, busca informacion y devuelve respuesta.
-    """
-    try:
-        mensaje  = req.mensaje.strip()
-        telefono = req.telefono
-        nombre   = req.nombre
-
-        # Detecta intención del mensaje
-        mensaje_lower = mensaje.lower()
-
-        # Si pide cotización
-        if any(p in mensaje_lower for p in ["cotiz", "cuantos galones", "cuantas tejas", "cuanto cemento"]):
-            respuesta = (
-                f"Hola {nombre}! Para hacer una cotizacion necesito:\n"
-                "1. Tipo de material (pintura, teja, cemento, acero)\n"
-                "2. Area en m2\n"
-                "3. Precio unitario\n\n"
-                "Ejemplo: *cotizar pintura 50m2 precio 80000*"
-            )
-        # Si pide precio o info de producto
-        else:
-            resultados = buscar_documentos(mensaje)
-            if not resultados:
-                respuesta = (
-                    f"Hola {nombre}! No encontre informacion sobre *{mensaje}*.\n"
-                    "Intenta con el nombre exacto del producto o consulta nuestro catalogo."
-                )
-            else:
-                contexto  = "\n\n".join([r["contenido"] for r in resultados])
-                respuesta = responder_con_ia(contexto, mensaje, "precios")
-                respuesta = f"Hola {nombre}!\n\n{respuesta}"
-
-        return {
-            "telefono": telefono,
-            "respuesta": respuesta,
-            "estado": "ok"
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.post("/cargar-pdf")
 async def cargar_pdf(
     archivo: UploadFile = File(...),
     producto: str = Form(...),
     proveedor: str = Form(...)
 ):
-    """
-    Carga un PDF y lo guarda en Supabase fragmentado por bloques lógicos.
-    """
     try:
         contenido = await archivo.read()
         texto = ""
@@ -586,11 +500,8 @@ async def cargar_pdf(
                 t = p.extract_text()
                 if t:
                     texto += t + "\n"
-
         if not texto.strip():
             raise HTTPException(status_code=400, detail="No se pudo leer el PDF")
-
-        # Fragmentar por líneas agrupando de a 10 líneas
         lineas = [l.strip() for l in texto.splitlines() if l.strip()]
         chunks = []
         for i in range(0, len(lineas), 10):
@@ -598,7 +509,6 @@ async def cargar_pdf(
             chunk = "\n".join(grupo)
             if len(chunk) > 20:
                 chunks.append(chunk)
-
         conn = get_conn()
         cur = conn.cursor()
         ok = 0
@@ -614,11 +524,6 @@ async def cargar_pdf(
         conn.commit()
         cur.close()
         conn.close()
-
-        return {
-            "mensaje": "PDF procesado correctamente",
-            "fragmentos_guardados": ok,
-            "archivo": archivo.filename
-        }
+        return {"mensaje": "PDF procesado correctamente", "fragmentos_guardados": ok, "archivo": archivo.filename}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
