@@ -250,7 +250,7 @@ def consultar(req: ConsultaRequest):
         mensaje_lower = req.pregunta.lower().strip()
 
         # Detectar ficha técnica
-        fichas = ["ficha técnica", "ficha tecnica", "necesito la ficha"]
+        fichas = ["ficha técnica", "ficha tecnica", "necesito la ficha", "ficha", "caracteristicas", "características", "especificaciones"]
         if any(f in mensaje_lower for f in fichas):
             return {
                 "respuesta": "📋 Con gusto te envío la ficha técnica.\n\n¿De qué producto necesitas la ficha técnica? Puedes preguntarme por:\n\n• Teja UPVC\n• Teja Policarbonato\n• WPC Interior/Exterior\n• Piso Deck / Piso SPC\n• Cielo Raso\n\nEscribe el nombre del producto. 👇",
