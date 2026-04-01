@@ -251,11 +251,24 @@ def consultar(req: ConsultaRequest):
 
         # Detectar ficha técnica
         fichas = ["ficha técnica", "ficha tecnica", "necesito la ficha", "ficha", "caracteristicas", "características", "especificaciones"]
-        if any(f in mensaje_lower for f in fichas):
+        es_ficha = any(f in mensaje_lower for f in fichas)
+
+        if es_ficha:
+            # Verificar si ya mencionó el producto
+            resultados = buscar_documentos(req.pregunta, tipo="ficha_tecnica")
+            if not resultados:
+                return {
+                    "respuesta": "📋 Con gusto te envío la ficha técnica.\n\n¿De qué producto necesitas la ficha técnica? Puedes preguntarme por:\n\n• Teja UPVC\n• Teja Policarbonato\n• WPC Interior/Exterior\n• Piso Deck / Piso SPC\n• Cielo Raso\n\nEscribe el nombre del producto. 👇",
+                    "fragmentos_encontrados": 0,
+                    "fuentes": []
+                }
+            contexto = "\n\n".join([r["contenido"] for r in resultados])
+            respuesta = responder_con_ia(contexto, req.pregunta, "ficha")
+            fuentes = list(set([r.get("fuente", "") for r in resultados]))
             return {
-                "respuesta": "📋 Con gusto te envío la ficha técnica.\n\n¿De qué producto necesitas la ficha técnica? Puedes preguntarme por:\n\n• Teja UPVC\n• Teja Policarbonato\n• WPC Interior/Exterior\n• Piso Deck / Piso SPC\n• Cielo Raso\n\nEscribe el nombre del producto. 👇",
-                "fragmentos_encontrados": 0,
-                "fuentes": []
+                "respuesta": respuesta,
+                "fragmentos_encontrados": len(resultados),
+                "fuentes": fuentes
             }
 
         # Detectar saludo inicial
