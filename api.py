@@ -146,6 +146,35 @@ def borrar_sesion(telefono: str):
         conn.close()
     except:
         pass
+def get_precios_material(material: str):
+    try:
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "SELECT * FROM precios_materiales WHERE material = %s ORDER BY precio",
+            (material,)
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return rows
+    except:
+        return []
+
+def get_precio_especifico(material: str, descripcion: str):
+    try:
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "SELECT * FROM precios_materiales WHERE material = %s AND descripcion ILIKE %s LIMIT 1",
+            (material, f"%{descripcion}%")
+        )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return dict(row) if row else None
+    except:
+        return None
 
 def buscar_documentos(pregunta: str, tipo: str = None):
     stopwords = {"que", "como", "cual", "para", "esto", "esta", "con",
@@ -303,43 +332,66 @@ def consultar(req: ConsultaRequest):
             material = sesion["material"]
             datos = sesion["datos"] or {}
 
-            if estado == "esperando_material":
-                if any(x in mensaje_lower for x in ["teja", "1", "uno"]):
-                    set_sesion(telefono, "esperando_area", "teja", {})
-                    return {"respuesta": "🏗️ Perfecto. ¿Cuántos m² tiene el techo que vas a cubrir?", "fragmentos_encontrados": 0, "fuentes": []}
-                elif any(x in mensaje_lower for x in ["pintura", "2", "dos"]):
-                    set_sesion(telefono, "esperando_area", "pintura", {})
-                    return {"respuesta": "🎨 Perfecto. ¿Cuántos m² vas a pintar?", "fragmentos_encontrados": 0, "fuentes": []}
-                elif any(x in mensaje_lower for x in ["cemento", "3", "tres"]):
-                    set_sesion(telefono, "esperando_area", "cemento", {})
-                    return {"respuesta": "🏚️ Perfecto. ¿Cuántos m² vas a cubrir con cemento?", "fragmentos_encontrados": 0, "fuentes": []}
-                elif any(x in mensaje_lower for x in ["hierro", "acero", "varilla", "4", "cuatro"]):
-                    set_sesion(telefono, "esperando_longitud", "acero", {})
-                    return {"respuesta": "⚙️ Perfecto. ¿Cuántos metros lineales de hierro necesitas?", "fragmentos_encontrados": 0, "fuentes": []}
-                elif any(x in mensaje_lower for x in ["ladrillo", "5", "cinco"]):
-                    set_sesion(telefono, "esperando_area", "ladrillo", {})
-                    return {"respuesta": "🧱 Perfecto. ¿Cuántos m² de muro vas a construir?", "fragmentos_encontrados": 0, "fuentes": []}
-                else:
-                    return {"respuesta": "Por favor elige uno de estos materiales:\n\n1️⃣ Teja\n2️⃣ Pintura\n3️⃣ Cemento\n4️⃣ Hierro/Varilla\n5️⃣ Ladrillo", "fragmentos_encontrados": 0, "fuentes": []}
+        if estado == "esperando_material":
+            if any(x in mensaje_lower for x in ["teja", "1", "uno"]):
+                precios = get_precios_material("teja")
+                opciones = "\n".join([f"{i+1}. {p['descripcion']} - ${p['precio']:,.0f}" for i, p in enumerate(precios)])
+                set_sesion(telefono, "esperando_tipo_teja", "teja", {"precios": [{"descripcion": p["descripcion"], "precio": float(p["precio"])} for p in precios]})
+                return {"respuesta": f"🏗️ Tenemos estas tejas disponibles:\n\n{opciones}\n\n¿Cuál necesitas? Escribe el número.", "fragmentos_encontrados": 0, "fuentes": []}
+            elif any(x in mensaje_lower for x in ["pintura", "2", "dos"]):
+                set_sesion(telefono, "esperando_area", "pintura", {})
+                return {"respuesta": "🎨 Perfecto. ¿Cuántos m² vas a pintar?", "fragmentos_encontrados": 0, "fuentes": []}
+            elif any(x in mensaje_lower for x in ["cemento", "3", "tres"]):
+                set_sesion(telefono, "esperando_area", "cemento", {})
+                return {"respuesta": "🏚️ Perfecto. ¿Cuántos m² vas a cubrir con cemento?", "fragmentos_encontrados": 0, "fuentes": []}
+            elif any(x in mensaje_lower for x in ["hierro", "acero", "varilla", "4", "cuatro"]):
+                set_sesion(telefono, "esperando_longitud", "acero", {})
+                return {"respuesta": "⚙️ Perfecto. ¿Cuántos metros lineales de hierro necesitas?", "fragmentos_encontrados": 0, "fuentes": []}
+            elif any(x in mensaje_lower for x in ["ladrillo", "5", "cinco"]):
+                precios = get_precios_material("ladrillo")
+            if precios:
+                precio_ladrillo = precios[0]["precio"]
+                set_sesion(telefono, "esperando_area", "ladrillo", {"precio_unitario": float(precio_ladrillo)})
+                return {"respuesta": f"🧱 Ladrillo 38x14x5 — Precio: ${precio_ladrillo:,.0f}/unidad\n\n¿Cuántos m² de muro vas a construir?", "fragmentos_encontrados": 0, "fuentes": []}
+            else:
+                return {"respuesta": "Por favor elige uno de estos materiales:\n\n1️⃣ Teja\n2️⃣ Pintura\n3️⃣ Cemento\n4️⃣ Hierro/Varilla\n5️⃣ Ladrillo", "fragmentos_encontrados": 0, "fuentes": []}}
+
+            elif estado == "esperando_tipo_teja":
+                precios = datos.get("precios", [])
+                try:
+                    idx = int(''.join(filter(str.isdigit, mensaje_lower))) - 1
+                    if 0 <= idx < len(precios):
+                        teja = precios[idx]
+                        set_sesion(telefono, "esperando_area", "teja", {"precio_unitario": teja["precio"], "descripcion": teja["descripcion"]})
+                        return {"respuesta": f"✅ *{teja['descripcion']}* seleccionada.\nPrecio: ${teja['precio']:,.0f}/unidad\n\n¿Cuántos m² tiene el techo que vas a cubrir?", "fragmentos_encontrados": 0, "fuentes": []}
+                    else:
+                        return {"respuesta": f"Por favor elige un número entre 1 y {len(precios)}.", "fragmentos_encontrados": 0, "fuentes": []}
+                except:
+                    return {"respuesta": "Por favor escribe el número de la teja que necesitas. Ejemplo: *1*", "fragmentos_encontrados": 0, "fuentes": []}
 
             elif estado == "esperando_area":
                 try:
                     area = float(''.join(filter(lambda x: x.isdigit() or x == '.', mensaje_lower)))
                     datos["area"] = area
                     if material == "teja":
-                        set_sesion(telefono, "esperando_precio_teja", material, datos)
-                        return {"respuesta": f"✅ {area} m² anotado.\n\n¿Cuál es el precio unitario de la teja? (en pesos colombianos)", "fragmentos_encontrados": 0, "fuentes": []}
-                    elif material == "pintura":
-                        set_sesion(telefono, "esperando_manos", material, datos)
-                        return {"respuesta": f"✅ {area} m² anotado.\n\n¿Cuántas manos de pintura vas a aplicar?", "fragmentos_encontrados": 0, "fuentes": []}
-                    elif material == "cemento":
-                        set_sesion(telefono, "esperando_grosor", material, datos)
-                        return {"respuesta": f"✅ {area} m² anotado.\n\n¿Cuál es el grosor en metros? (ejemplo: 0.10 para 10cm)", "fragmentos_encontrados": 0, "fuentes": []}
-                    elif material == "ladrillo":
-                        set_sesion(telefono, "esperando_precio_ladrillo", material, datos)
-                        return {"respuesta": f"✅ {area} m² anotado.\n\n¿Cuál es el precio unitario del ladrillo?", "fragmentos_encontrados": 0, "fuentes": []}
-                except:
-                    return {"respuesta": "Por favor escribe solo el número de m². Ejemplo: *50*", "fragmentos_encontrados": 0, "fuentes": []}
+                        precio = datos.get("precio_unitario", 0)
+                        descripcion = datos.get("descripcion", "Teja")
+                        resultado = calcular_material("teja", area=area, largo=11.80, ancho=1.075, precio_unitario=precio, traslapo=0.1)
+                        borrar_sesion(telefono)
+                        return {"respuesta": f"🧮 *Cotización {descripcion}*\n\nÁrea: {resultado['area_m2']} m²\nCantidad: {resultado['cantidad']} tejas\nPrecio unitario: ${precio:,.0f}\nTotal estimado: ${resultado['precio_total']:,.0f}\n\n¿Deseas confirmar el pedido? Responde *SI* para continuar.", "fragmentos_encontrados": 0, "fuentes": []}
+        elif material == "pintura":
+            set_sesion(telefono, "esperando_manos", material, datos)
+            return {"respuesta": f"✅ {area} m² anotado.\n\n¿Cuántas manos de pintura vas a aplicar?", "fragmentos_encontrados": 0, "fuentes": []}
+        elif material == "cemento":
+            set_sesion(telefono, "esperando_grosor", material, datos)
+            return {"respuesta": f"✅ {area} m² anotado.\n\n¿Cuál es el grosor en metros? (ejemplo: 0.10 para 10cm)", "fragmentos_encontrados": 0, "fuentes": []}
+        elif material == "ladrillo":
+            precio = datos.get("precio_unitario", 0)
+            resultado = calcular_material("ladrillo", area=area, largo=0.38, ancho=0.14, precio_unitario=precio, traslapo=0.05)
+            borrar_sesion(telefono)
+            return {"respuesta": f"🧮 *Cotización Ladrillo 38x14x5*\n\nÁrea: {resultado['area_m2']} m²\nLadrillos: {resultado['cantidad']} unidades\nPrecio unitario: ${precio:,.0f}\nTotal estimado: ${resultado['precio_total']:,.0f}\n\n¿Deseas confirmar el pedido? Responde *SI* para continuar.", "fragmentos_encontrados": 0, "fuentes": []}
+    except:
+        return {"respuesta": "Por favor escribe solo el número de m². Ejemplo: *50*", "fragmentos_encontrados": 0, "fuentes": []}
 
             elif estado == "esperando_longitud":
                 try:
