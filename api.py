@@ -256,6 +256,18 @@ def consultar(req: ConsultaRequest):
 
             # ── PASO 1: El cliente dijo qué producto quiere ──
             if estado == "esperando_material":
+                # Permitir selección por número
+                msg_strip = mensaje_lower.strip()
+                if msg_strip in ["1", "1.", "teja"]:
+                    req.pregunta = "teja"
+                elif msg_strip in ["2", "2.", "pintura"]:
+                    req.pregunta = "pintura"
+                elif msg_strip in ["3", "3.", "cemento"]:
+                    req.pregunta = "cemento"
+                elif msg_strip in ["4", "4.", "hierro", "varilla", "acero"]:
+                    req.pregunta = "hierro"
+                elif msg_strip in ["5", "5.", "ladrillo", "bloque"]:
+                    req.pregunta = "ladrillo"
                 mat = detectar_material(req.pregunta)
 
                 if mat == "teja":
@@ -504,6 +516,16 @@ def consultar(req: ConsultaRequest):
         # FLUJO PRINCIPAL (sin sesión activa)
         # ═══════════════════════════════════════
 
+        # ── Confirmación SI / NO tras cotización ──
+        if mensaje_lower.strip() in ["si", "sí", "si!", "sí!", "claro", "dale", "ok", "okay"]:
+            if telefono:
+                set_sesion(telefono, "esperando_material", None, {})
+            return {"respuesta": "Perfecto! ¿Que mas necesitas?\n\n1. Cotizar otro material\n2. Consultar precios\n3. Ver ficha tecnica\n\nEscribe el numero o la opcion.", "fragmentos_encontrados": 0, "fuentes": []}
+
+        if mensaje_lower.strip() in ["no", "no gracias", "listo", "gracias", "hasta luego", "chao", "bye"]:
+            borrar_sesion(telefono)
+            return {"respuesta": "Gracias por contactar a *OBRIXA AI*. Fue un placer ayudarte. Cuando necesites materiales de construccion, aqui estamos. Hasta pronto!", "fragmentos_encontrados": 0, "fuentes": []}
+
         # ── Ficha técnica ──
         fichas = ["ficha técnica", "ficha tecnica", "necesito la ficha", "datos tecnicos", "datos técnicos"]
         if any(f in mensaje_lower for f in fichas):
@@ -515,26 +537,35 @@ def consultar(req: ConsultaRequest):
             fuentes = list(set([r.get("fuente", "") for r in resultados]))
             return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
 
+        # ── Selección por número del menú principal ──
+        if mensaje_lower.strip() in ["1", "1.", "consultar precios", "consultar"]:
+            resultados = buscar_documentos("precios materiales construccion", tipo="precio")
+            if not resultados:
+                return {"respuesta": "No encontre precios disponibles en este momento. Intenta con: teja, cemento, acero, piso, cielo raso, WPC.", "fragmentos_encontrados": 0, "fuentes": []}
+            contexto = "\n\n".join([r["contenido"] for r in resultados])
+            respuesta = responder_con_ia(contexto, "lista de precios disponibles", "general")
+            fuentes = list(set([r.get("fuente", "") for r in resultados]))
+            return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
+
+        if mensaje_lower.strip() in ["2", "2.", "ficha", "ficha tecnica", "ficha técnica", "ver ficha"]:
+            return {"respuesta": "¿De que producto necesitas la ficha tecnica?\n\n1. Teja UPVC\n2. Teja Policarbonato\n3. WPC Interior/Exterior\n4. Piso Deck / Piso SPC\n5. Cielo Raso\n\nEscribe el nombre del producto.", "fragmentos_encontrados": 0, "fuentes": []}
+
+        if mensaje_lower.strip() in ["3", "3.", "cotizar", "cotizar otro", "cotizar otro material"]:
+            if telefono:
+                set_sesion(telefono, "esperando_material", None, {})
+            return {"respuesta": "Con gusto te ayudo a cotizar.\n\n¿Que material necesitas?\n\n1. Teja\n2. Pintura\n3. Cemento\n4. Hierro / Varilla\n5. Ladrillo\n\nEscribe el numero o el nombre del material.", "fragmentos_encontrados": 0, "fuentes": []}
+
         # ── Cotizar ──
         cotizar_keywords = ["cotizar", "cotización", "cotizacion", "cuanto sale", "cuánto sale", "necesito calcular", "me cotiza", "me cotizas", "quiero cotizar"]
         if any(k in mensaje_lower for k in cotizar_keywords):
-            # Intentar detectar si ya mencionó el material en el mismo mensaje
-            mat = detectar_material(req.pregunta)
-            if mat and telefono:
-                # Arrancar directo al paso del material detectado
-                set_sesion(telefono, "esperando_material", None, {})
-                # Reusar la misma lógica pasando de nuevo por sesion
-                # Simular que ya tiene sesión esperando_material
-                sesion_nueva = {"estado": "esperando_material", "material": None, "datos": {}}
-                # Procesar en siguiente turno — mejor guardar sesion y responder con pregunta de area directamente
             if telefono:
                 set_sesion(telefono, "esperando_material", None, {})
-            return {"respuesta": "🏗️ Con gusto te ayudo a cotizar.\n\n¿Que material necesitas?\n\nEscribe el nombre: teja, pintura, cemento, hierro o ladrillo.", "fragmentos_encontrados": 0, "fuentes": []}
+            return {"respuesta": "Con gusto te ayudo a cotizar.\n\n¿Que material necesitas?\n\n1. Teja\n2. Pintura\n3. Cemento\n4. Hierro / Varilla\n5. Ladrillo\n\nEscribe el numero o el nombre del material.", "fragmentos_encontrados": 0, "fuentes": []}
 
         # ── Saludos ──
         saludos = ["hola", "buenos", "buenas", "buen dia", "buen día", "consultar precios", "quiero consultar", "hi", "hey"]
         if any(s in mensaje_lower for s in saludos):
-            return {"respuesta": "Hola! Bienvenido a *OBRIXA AI*. Con mucho gusto te ayudo.\n\n¿Que necesitas hoy?\n\nConsultar *precios*\nVer *ficha tecnica*\n*Cotizar* materiales", "fragmentos_encontrados": 0, "fuentes": []}
+            return {"respuesta": "Hola! Bienvenido a *OBRIXA AI*. Con mucho gusto te ayudo.\n\n¿Que necesitas hoy?\n\n1. Consultar precios\n2. Ver ficha tecnica\n3. Cotizar materiales\n\nEscribe el numero o el nombre de la opcion.", "fragmentos_encontrados": 0, "fuentes": []}
 
         # ── Búsqueda general en embeddings ──
         resultados = buscar_documentos(req.pregunta, tipo="precio")
