@@ -375,54 +375,55 @@ def consultar(req: ConsultaRequest):
 
         # ═══════════════════════════════════════════════════════
         # BLOQUE 1 — COMANDOS GLOBALES
-        # Tienen prioridad absoluta. Interrumpen cualquier sesión.
+        # Los saludos/SI/NO siempre tienen prioridad.
+        # Los números 1-6 solo actúan si NO hay sesión activa.
         # ═══════════════════════════════════════════════════════
 
-        # Saludo → menú principal
+        # Saludo → menú principal (siempre, rompe cualquier sesión)
         saludos = ["hola", "buenos", "buenas", "buen dia", "buen día",
                    "hi", "hey", "inicio", "menu", "menú", "start"]
         if any(s in msg for s in saludos):
             borrar_sesion(telefono)
             return r(MENU_PRINCIPAL)
 
-        # Confirmación positiva → menú post-cotización
+        # Confirmación positiva (siempre)
         if msg in ["si", "sí", "si!", "sí!", "claro", "dale", "ok", "okay"]:
             borrar_sesion(telefono)
             return r(MENU_POST)
 
-        # Confirmación negativa → despedida
+        # Confirmación negativa (siempre)
         if msg in ["no", "no gracias", "listo", "gracias", "hasta luego", "chao", "bye"]:
             borrar_sesion(telefono)
             return r(DESPEDIDA)
 
-        # Opción 1 → menú de precios por producto
-        if msg in ["1", "1.", "consultar precios", "consultar", "precios", "ver precios"]:
-            borrar_sesion(telefono)
-            set_sesion(telefono, "consultando_precios", None, {})
-            return r(MENU_PRECIOS)
+        # Leer sesión ANTES de evaluar los números
+        sesion = get_sesion(telefono) if telefono else None
+        estado_actual = sesion["estado"] if sesion else None
 
-        # Opción 2 → menú de fichas técnicas
-        if msg in ["2", "2.", "ficha", "ficha tecnica", "ficha técnica", "ver ficha", "fichas"]:
-            borrar_sesion(telefono)
-            set_sesion(telefono, "consultando_fichas", None, {})
-            return r(MENU_FICHAS)
+        # Los números del menú principal solo aplican si NO hay sesión activa
+        # (o si la sesión es post-cotización, es decir no hay estado de espera)
+        if estado_actual is None:
+            if msg in ["1", "1.", "consultar precios", "consultar", "precios", "ver precios"]:
+                set_sesion(telefono, "consultando_precios", None, {})
+                return r(MENU_PRECIOS)
 
-        # Opción 3 → inicio del cotizador
-        if msg in ["3", "3.", "cotizar", "cotizacion", "cotización", "quiero cotizar",
-                   "me cotizas", "cuanto sale", "cuánto sale", "necesito calcular"]:
-            borrar_sesion(telefono)
-            set_sesion(telefono, "esperando_material", None, {})
-            return r(MENU_MATERIALES)
+            if msg in ["2", "2.", "ficha", "ficha tecnica", "ficha técnica", "ver ficha", "fichas"]:
+                set_sesion(telefono, "consultando_fichas", None, {})
+                return r(MENU_FICHAS)
 
-        # Opción 6 → todos los precios
-        if msg in ["6", "6.", "todos", "todos los productos"]:
-            resultados = buscar_documentos("precios materiales construccion", tipo="precio")
-            if resultados:
-                contexto = "\n\n".join([r_["contenido"] for r_ in resultados])
-                respuesta = responder_con_ia(contexto, "lista de precios disponibles", "general")
-                fuentes = list(set([r_.get("fuente", "") for r_ in resultados]))
-                return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
-            return r("No encontre precios disponibles en este momento.")
+            if msg in ["3", "3.", "cotizar", "cotizacion", "cotización", "quiero cotizar",
+                       "me cotizas", "cuanto sale", "cuánto sale", "necesito calcular"]:
+                set_sesion(telefono, "esperando_material", None, {})
+                return r(MENU_MATERIALES)
+
+            if msg in ["6", "6.", "todos", "todos los productos"]:
+                resultados = buscar_documentos("precios materiales construccion", tipo="precio")
+                if resultados:
+                    contexto = "\n\n".join([r_["contenido"] for r_ in resultados])
+                    respuesta = responder_con_ia(contexto, "lista de precios disponibles", "general")
+                    fuentes = list(set([r_.get("fuente", "") for r_ in resultados]))
+                    return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
+                return r("No encontre precios disponibles en este momento.")
 
         # ═══════════════════════════════════════════════════════
         # BLOQUE 2 — BÚSQUEDA DE PRECIOS POR PRODUCTO
@@ -430,7 +431,6 @@ def consultar(req: ConsultaRequest):
         # sin sesión activa (viene del MENU_PRECIOS)
         # ═══════════════════════════════════════════════════════
 
-        sesion = get_sesion(telefono) if telefono else None
         mat_detectado = detectar_material(req.pregunta)
 
         if mat_detectado and not sesion:
@@ -943,4 +943,3 @@ async def cargar_pdf(
         return {"mensaje": "PDF procesado correctamente", "fragmentos_guardados": ok, "archivo": archivo.filename}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
