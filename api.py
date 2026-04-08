@@ -284,17 +284,25 @@ def consultar(req: ConsultaRequest):
 
                 elif mat == "ladrillo":
                     precios = get_precios_material("ladrillo")
-                    if precios:
-                        precio_ladrillo = float(precios[0]["precio"])
-                        descripcion = precios[0].get("descripcion", "Ladrillo 38x14x5")
-                        set_sesion(telefono, "esperando_area", "ladrillo", {
-                            "precio_unitario": precio_ladrillo,
-                            "descripcion": descripcion
+                    # Opciones fijas Terras de San Marino — Brick Liso 11 (23x11x6.5 cm, 56 und/m²)
+                    opciones_fijas = [
+                        {"descripcion": "Brick Liso 11 - Liso Arena (23x11x6.5 cm)", "precio": 0, "rendimiento": 56},
+                        {"descripcion": "Brick Liso 11 - Liso Castor (23x11x6.5 cm)", "precio": 0, "rendimiento": 56},
+                        {"descripcion": "Brick Liso 11 - Rustico Arena (23x11x6.5 cm)", "precio": 0, "rendimiento": 56},
+                    ]
+                    # Mezclar con los que haya en DB (con precio)
+                    for p in precios:
+                        opciones_fijas.insert(0, {
+                            "descripcion": p["descripcion"],
+                            "precio": float(p["precio"]),
+                            "rendimiento": 56
                         })
-                        return {"respuesta": f"🧱 *{descripcion}*\nPrecio: ${precio_ladrillo:,.0f}/unidad\n\n¿Cuántos m² de muro vas a construir?", "fragmentos_encontrados": 0, "fuentes": []}
-                    else:
-                        borrar_sesion(telefono)
-                        return {"respuesta": "Por el momento no tenemos precios de ladrillo disponibles. Contáctanos para cotizar.", "fragmentos_encontrados": 0, "fuentes": []}
+                    opciones_txt = "\n".join([
+                        f"{i+1}. {o['descripcion']}" + (f" - ${o['precio']:,.0f}/und" if o["precio"] > 0 else " - Precio a consultar")
+                        for i, o in enumerate(opciones_fijas)
+                    ])
+                    set_sesion(telefono, "esperando_tipo_ladrillo", "ladrillo", {"opciones": opciones_fijas})
+                    return {"respuesta": f"🧱 Tenemos estos ladrillos disponibles:\n\n{opciones_txt}\n\n¿Cuál necesitas? Escribe el número.", "fragmentos_encontrados": 0, "fuentes": []}
 
                 elif mat == "pintura":
                     precios = get_precios_material("pintura")
@@ -367,6 +375,26 @@ def consultar(req: ConsultaRequest):
                 else:
                     return {"respuesta": "Por favor escribe el número de la teja. Ejemplo: *1*", "fragmentos_encontrados": 0, "fuentes": []}
 
+            # ── PASO 2b: Selección de tipo de ladrillo ──
+            elif estado == "esperando_tipo_ladrillo":
+                opciones = datos.get("opciones", [])
+                num = extraer_numero(mensaje_lower)
+                if num is not None:
+                    idx = int(num) - 1
+                    if 0 <= idx < len(opciones):
+                        ladrillo = opciones[idx]
+                        set_sesion(telefono, "esperando_area", "ladrillo", {
+                            "precio_unitario": ladrillo["precio"],
+                            "descripcion": ladrillo["descripcion"],
+                            "rendimiento": ladrillo.get("rendimiento", 56)
+                        })
+                        precio_txt = f"${ladrillo['precio']:,.0f}/und" if ladrillo["precio"] > 0 else "Precio a consultar"
+                        return {"respuesta": f"✅ *{ladrillo['descripcion']}* seleccionado.\nRendimiento: {ladrillo.get('rendimiento', 56)} und/m² | {precio_txt}\n\n¿Cuántos m² de muro vas a construir?", "fragmentos_encontrados": 0, "fuentes": []}
+                    else:
+                        return {"respuesta": f"Por favor elige un número entre 1 y {len(opciones)}.", "fragmentos_encontrados": 0, "fuentes": []}
+                else:
+                    return {"respuesta": "Por favor escribe el número del ladrillo. Ejemplo: *1*", "fragmentos_encontrados": 0, "fuentes": []}
+
             # ── PASO 3: Recibe el área y calcula ──
             elif estado == "esperando_area":
                 num = extraer_numero(mensaje_lower)
@@ -388,16 +416,30 @@ def consultar(req: ConsultaRequest):
                         ), "fragmentos_encontrados": 0, "fuentes": []}
 
                     elif material == "ladrillo":
-                        resultado = calcular_material("ladrillo", area=area, largo=0.38, ancho=0.14, precio_unitario=precio, traslapo=0.05)
+                        rendimiento_ladrillo = datos.get("rendimiento", 56)
+                        cantidad = math.ceil(area * rendimiento_ladrillo * 1.05)  # 5% de desperdicio
                         borrar_sesion(telefono)
-                        return {"respuesta": (
-                            f"🧮 *Cotización {descripcion}*\n\n"
-                            f"Area de muro: {resultado['area_m2']} m2\n"
-                            f"Ladrillos necesarios: {resultado['cantidad']} unidades\n"
-                            f"Precio unitario: ${precio:,.0f}\n"
-                            f"Total estimado: ${resultado['precio_total']:,.0f}\n\n"
-                            f"Deseas confirmar el pedido? Responde *SI* para continuar."
-                        ), "fragmentos_encontrados": 0, "fuentes": []}
+                        if precio > 0:
+                            total = round(cantidad * precio, 2)
+                            return {"respuesta": (
+                                f"🧮 *Cotizacion {descripcion}*\n\n"
+                                f"Area de muro: {area} m2\n"
+                                f"Rendimiento: {rendimiento_ladrillo} und/m2\n"
+                                f"Ladrillos necesarios: {cantidad} unidades (incluye 5% desperdicio)\n"
+                                f"Precio unitario: ${precio:,.0f}\n"
+                                f"Total estimado: ${total:,.0f}\n\n"
+                                f"Deseas confirmar el pedido? Responde *SI* para continuar."
+                            ), "fragmentos_encontrados": 0, "fuentes": []}
+                        else:
+                            return {"respuesta": (
+                                f"🧮 *Cotizacion {descripcion}*\n"
+                                f"Proveedor: Terras de San Marino\n\n"
+                                f"Area de muro: {area} m2\n"
+                                f"Rendimiento: {rendimiento_ladrillo} und/m2\n"
+                                f"Ladrillos necesarios: {cantidad} unidades (incluye 5% desperdicio)\n"
+                                f"Precio: A consultar con el proveedor\n\n"
+                                f"Para obtener el precio contactanos. ¿Deseas cotizar otro material? Responde *SI*."
+                            ), "fragmentos_encontrados": 0, "fuentes": []}
 
                     elif material == "pintura":
                         cobertura = datos.get("cobertura", 40)
