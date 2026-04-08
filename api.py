@@ -398,11 +398,13 @@ def consultar(req: ConsultaRequest):
         # Opción 1 → menú de precios por producto
         if msg in ["1", "1.", "consultar precios", "consultar", "precios", "ver precios"]:
             borrar_sesion(telefono)
+            set_sesion(telefono, "consultando_precios", None, {})
             return r(MENU_PRECIOS)
 
         # Opción 2 → menú de fichas técnicas
         if msg in ["2", "2.", "ficha", "ficha tecnica", "ficha técnica", "ver ficha", "fichas"]:
             borrar_sesion(telefono)
+            set_sesion(telefono, "consultando_fichas", None, {})
             return r(MENU_FICHAS)
 
         # Opción 3 → inicio del cotizador
@@ -474,6 +476,67 @@ def consultar(req: ConsultaRequest):
             estado = sesion["estado"]
             material = sesion["material"]
             datos = sesion["datos"] or {}
+
+            # ── Estado: consultando ficha técnica ──
+            if estado == "consultando_fichas":
+                mapa_fichas = {
+                    "1": "teja upvc", "teja upvc": "teja upvc", "upvc": "teja upvc",
+                    "2": "policarbonato", "policarbonato": "policarbonato",
+                    "3": "wpc", "wpc": "wpc",
+                    "4": "piso deck", "piso spc": "piso deck", "deck": "piso deck", "spc": "piso deck",
+                    "5": "cielo raso", "cielo raso": "cielo raso", "cielo": "cielo raso",
+                }
+                termino_ficha = mapa_fichas.get(msg.strip(), None)
+                if termino_ficha is None:
+                    # Buscar por palabras clave en el mensaje
+                    for k, v in mapa_fichas.items():
+                        if k in msg:
+                            termino_ficha = v
+                            break
+
+                if not termino_ficha:
+                    return r("No reconoci el producto.\n\n" + MENU_FICHAS)
+
+                borrar_sesion(telefono)
+                resultados = buscar_documentos(termino_ficha, tipo="ficha_tecnica")
+                if resultados:
+                    contexto = "\n\n".join([r_["contenido"] for r_ in resultados])
+                    respuesta = responder_con_ia(contexto, termino_ficha, "ficha")
+                    fuentes = list(set([r_.get("fuente", "") for r_ in resultados]))
+                    return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
+                return r(f"No encontre ficha tecnica de {termino_ficha}.\n\nEscribe *2* para ver el menu de fichas.")
+
+            # ── Estado: consultando precios por producto ──
+            if estado == "consultando_precios":
+                # Mapeo número → término de búsqueda
+                mapa = {
+                    "1": "teja", "teja": "teja",
+                    "2": "pintura", "pintura": "pintura",
+                    "3": "cemento", "cemento": "cemento",
+                    "4": "hierro", "hierro": "hierro", "varilla": "hierro", "acero": "hierro",
+                    "5": "ladrillo", "ladrillo": "ladrillo", "brick": "ladrillo",
+                    "6": "todos", "todos": "todos",
+                }
+                termino = mapa.get(msg.strip(), None)
+                if termino is None:
+                    # Intentar detectar por nombre
+                    mat_tmp = detectar_material(req.pregunta)
+                    termino = "hierro" if mat_tmp == "acero" else mat_tmp
+
+                if termino == "todos":
+                    resultados = buscar_documentos("precios materiales construccion", tipo="precio")
+                elif termino:
+                    resultados = buscar_documentos(termino, tipo="precio")
+                else:
+                    return r("No reconoci el producto.\n\n" + MENU_PRECIOS)
+
+                borrar_sesion(telefono)
+                if resultados:
+                    contexto = "\n\n".join([r_["contenido"] for r_ in resultados])
+                    respuesta = responder_con_ia(contexto, req.pregunta if termino != "todos" else "lista de precios", "general")
+                    fuentes = list(set([r_.get("fuente", "") for r_ in resultados]))
+                    return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
+                return r(f"No encontre precios de {termino} en este momento.\n\nEscribe *1* para ver el menu de precios.")
 
             # ── Estado: esperando que el cliente diga el material ──
             if estado == "esperando_material":
@@ -880,3 +943,4 @@ async def cargar_pdf(
         return {"mensaje": "PDF procesado correctamente", "fragmentos_guardados": ok, "archivo": archivo.filename}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
