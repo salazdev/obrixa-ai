@@ -27,7 +27,7 @@ import os
 load_dotenv()
 
 # ✅ CORRECCIÓN: os.getenv() recibe el NOMBRE de la variable, no el valor
-OPENAI_KEY   = os.getenv("OPENAI_KEY")
+OPENAI_KEY = os.getenv("OPENAI_KEY") or os.getenv("OPENAI_API_KEY", "")
 DB_URL       = os.getenv("DB_URL", "postgresql://postgres.zomdvxmiqqwpxhxklpeb:RxNVnNQo6bWMbbqN@aws-1-us-east-1.pooler.supabase.com:6543/postgres")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://zomdvxmiqqwpxhxklpeb.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
