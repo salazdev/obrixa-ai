@@ -26,10 +26,11 @@ from dotenv import load_dotenv
 import os
 load_dotenv()
 
-OPENAI_KEY = os.getenv("OPENAI_KEY")
-DB_URL      = os.getenv("postgresql://postgres.zomdvxmiqqwpxhxklpeb:ObrixaSalaz2024@aws-1-us-east-1.pooler.supabase.com:6543/postgres")
-SUPABASE_URL = os.getenv("zomdvxmiqqwpxhxklpeb")
-SUPABASE_KEY = os.getenv("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpvbWR2eG1pcXF3cHhoeGtscGViIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NzIwODksImV4cCI6MjA4OTQ0ODA4OX0.xLRYnXIvVl6nl6UvnL2z5A4aSvrU8b_pMpt5NMe0qAk")
+# ✅ CORRECCIÓN: os.getenv() recibe el NOMBRE de la variable, no el valor
+OPENAI_KEY   = os.getenv("OPENAI_KEY")
+DB_URL       = os.getenv("DB_URL", "postgresql://postgres.zomdvxmiqqwpxhxklpeb:RxNVnNQo6bWMbbqN@aws-1-us-east-1.pooler.supabase.com:6543/postgres")
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://zomdvxmiqqwpxhxklpeb.supabase.co")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 @st.cache_resource
 def get_openai():
@@ -143,13 +144,17 @@ def borrar_documento(fuente):
     except Exception as e:
         print(f"Error borrando: {e}")
 
-def guardar_documento(texto, fuente, producto, proveedor):
+def guardar_documento(texto, fuente, producto, proveedor, tipo="precio"):
+    """
+    ✅ CORRECCIÓN: agregado campo 'tipo' para clasificar correctamente en embeddings
+    tipo puede ser: 'precio', 'ficha_tecnica'
+    """
     try:
         conn = get_conn()
         cur  = conn.cursor()
         cur.execute(
-            "INSERT INTO embeddings (contenido, fuente, producto, proveedor) VALUES (%s,%s,%s,%s)",
-            (texto, fuente, producto, proveedor)
+            "INSERT INTO embeddings (contenido, fuente, producto, proveedor, tipo) VALUES (%s,%s,%s,%s,%s)",
+            (texto, fuente, producto, proveedor, tipo)
         )
         conn.commit()
         cur.close()
@@ -165,11 +170,10 @@ def guardar_precio(producto, precio, proveedor, moneda="COP"):
         conn = get_conn()
         cur  = conn.cursor()
         cur.execute("""
-            INSERT INTO precios (producto, precio, proveedor, moneda)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (producto, proveedor) DO UPDATE
-            SET precio = EXCLUDED.precio, moneda = EXCLUDED.moneda
-        """, (producto, precio, proveedor, moneda))
+            INSERT INTO precios_materiales (material, descripcion, precio)
+            VALUES (%s, %s, %s)
+            ON CONFLICT DO NOTHING
+        """, (proveedor.lower(), producto, precio))
         conn.commit()
         cur.close()
         conn.close()
@@ -188,7 +192,7 @@ def quitar_tildes(s):
         if unicodedata.category(c) != 'Mn'
     )
 
-def buscar_documentos(pregunta):
+def buscar_documentos(pregunta, tipo=None):
     try:
         stopwords = {"que", "como", "cual", "para", "esto", "esta", "con",
              "los", "las", "del", "una", "por", "cuales", "son",
@@ -204,10 +208,16 @@ def buscar_documentos(pregunta):
         vistos = set()
         for palabra in palabras[:4]:
             for variante in [palabra, quitar_tildes(palabra)]:
-                cur.execute(
-                    "SELECT * FROM embeddings WHERE contenido ILIKE %s LIMIT 8",
-                    (f"%{variante}%",)
-                )
+                if tipo:
+                    cur.execute(
+                        "SELECT * FROM embeddings WHERE contenido ILIKE %s AND tipo = %s LIMIT 8",
+                        (f"%{variante}%", tipo)
+                    )
+                else:
+                    cur.execute(
+                        "SELECT * FROM embeddings WHERE contenido ILIKE %s LIMIT 8",
+                        (f"%{variante}%",)
+                    )
                 for r in cur.fetchall():
                     if r["id"] not in vistos:
                         vistos.add(r["id"])
@@ -224,7 +234,7 @@ def buscar_precios(nombre):
         conn = get_conn()
         cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
         cur.execute(
-            "SELECT * FROM precios WHERE producto ILIKE %s LIMIT 30",
+            "SELECT * FROM precios_materiales WHERE descripcion ILIKE %s LIMIT 30",
             (f"%{nombre}%",)
         )
         rows = [dict(r) for r in cur.fetchall()]
@@ -238,7 +248,7 @@ def listar_documentos():
     try:
         conn = get_conn()
         cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT id, fuente, producto, proveedor, created_at FROM embeddings ORDER BY created_at DESC LIMIT 100")
+        cur.execute("SELECT id, fuente, producto, proveedor, tipo, created_at FROM embeddings ORDER BY created_at DESC LIMIT 100")
         rows = [dict(r) for r in cur.fetchall()]
         cur.close()
         conn.close()
@@ -262,12 +272,21 @@ def contar_documentos():
 # IA
 # ---------------------------
 def responder_con_ia(contexto, pregunta, modo="general"):
-    system = (
-        "Eres experto en materiales de construccion colombianos. "
-        "Usa el contexto para responder con precios, unidades y especificaciones. "
-        "Si hay tablas de precios en el contexto, extrae y muestra los valores. "
-        "Responde en espanol."
-    )
+    if modo == "ficha":
+        system = (
+            "Eres experto en pinturas y materiales de construccion colombianos de Sherwin-Williams. "
+            "Presenta la ficha tecnica del producto de forma clara. "
+            "Incluye: usos recomendados, superficies compatibles, rendimiento en m2 por galon, "
+            "tiempo de secado, dilucion, numero de manos y advertencias importantes. "
+            "Responde en espanol."
+        )
+    else:
+        system = (
+            "Eres experto en materiales de construccion colombianos. "
+            "Usa el contexto para responder con precios, unidades y especificaciones. "
+            "Si hay tablas de precios en el contexto, extrae y muestra los valores. "
+            "Responde en espanol."
+        )
     try:
         resp = openai_client.chat.completions.create(
             model="gpt-4o-mini",
@@ -366,7 +385,7 @@ def scrape_precios(url, sel_prod=None, sel_precio=None):
         return pd.DataFrame()
 
 # ---------------------------
-# COTIZADOR
+# COTIZADOR — Solo Tejas y Pinturas SW
 # ---------------------------
 def calcular_material(categoria, area=0, largo=0, ancho=0, grosor=0,
                       cobertura=0, precio_unitario=0, rendimiento=1,
@@ -384,7 +403,7 @@ def calcular_material(categoria, area=0, largo=0, ancho=0, grosor=0,
             "precio_total": round(galones * precio_unitario, 2),
             "unidad": "galones"
         }
-    elif categoria in ["teja", "baldosa", "ladrillo"]:
+    elif categoria == "teja":
         au   = largo * ancho
         act  = area * (1 + traslapo)
         cant = math.ceil(act / au) if au > 0 else 0
@@ -398,30 +417,6 @@ def calcular_material(categoria, area=0, largo=0, ancho=0, grosor=0,
             "precio_total": round(cant * precio_unitario, 2),
             "unidad": "unidades"
         }
-    elif categoria == "cemento":
-        vol  = area * grosor
-        cant = math.ceil(vol * rendimiento)
-        return {
-            "area_m2": round(area, 2),
-            "grosor_m": grosor,
-            "volumen_m3": round(vol, 3),
-            "sacos_por_m3": rendimiento,
-            "cantidad_sacos": cant,
-            "precio_unitario": precio_unitario,
-            "precio_total": round(cant * precio_unitario, 2),
-            "unidad": "sacos 50kg"
-        }
-    elif categoria == "acero":
-        cant = math.ceil(largo / 12)
-        peso = largo * ancho * grosor * 7850 if (ancho > 0 and grosor > 0) else 0
-        return {
-            "longitud_m": largo,
-            "varillas_12m": cant,
-            "peso_estimado_kg": round(peso, 2),
-            "precio_unitario_varilla": precio_unitario,
-            "precio_total": round(cant * precio_unitario, 2),
-            "unidad": "varillas"
-        }
     return {}
 
 def exportar_excel(df):
@@ -431,65 +426,77 @@ def exportar_excel(df):
     return buf.getvalue()
 
 # ---------------------------
-# PINTURAS DB
+# BASE DE DATOS PINTURAS SW
 # ---------------------------
-PINTURAS_DB = {
-    "Viniltex Sherwin-Williams": {
-        "cobertura_m2_galon": 35, "acabado": "mate",
-        "dilucion": "10-15% agua", "tiempo_secado_tacto": "30 min",
-        "tiempo_repinte": "2 horas", "manos_recomendadas": 2,
-        "usos": "Interior - muros - cielorrasos"
-    },
-    "Pintuco Vinilo Interior": {
-        "cobertura_m2_galon": 30, "acabado": "mate",
-        "dilucion": "15% agua", "tiempo_secado_tacto": "45 min",
-        "tiempo_repinte": "2-3 horas", "manos_recomendadas": 2,
-        "usos": "Interior - muros"
-    },
-    "Corona Exterior Acrilico": {
-        "cobertura_m2_galon": 28, "acabado": "satinado",
-        "dilucion": "10% agua", "tiempo_secado_tacto": "1 hora",
+PINTURAS_SW = {
+    "SuperPaint Exterior": {
+        "cobertura_m2_galon": 33, "acabado": "mate/satinado/semibrillante",
+        "dilucion": "hasta 10% agua", "tiempo_secado_tacto": "2 horas",
         "tiempo_repinte": "4 horas", "manos_recomendadas": 2,
-        "usos": "Exterior - fachadas"
+        "usos": "Exterior - fachadas - madera - estuco - fibrocemento - ladrillo",
+        "superficie": "madera, ladrillo, estuco, fibrocemento, acero, galvanizado, OSB, PVC"
+    },
+    "SuperPaint Interior": {
+        "cobertura_m2_galon": 33, "acabado": "mate/satinado/semibrillante",
+        "dilucion": "hasta 10% agua", "tiempo_secado_tacto": "30 minutos",
+        "tiempo_repinte": "2-4 horas", "manos_recomendadas": 2,
+        "usos": "Interior - muros - cielorrasos - drywall",
+        "superficie": "drywall, estuco, ladrillo, fibrocemento, OSB, cielos rasos"
+    },
+    "Elastomerica": {
+        "cobertura_m2_galon": 17, "acabado": "mate",
+        "dilucion": "no dilуir", "tiempo_secado_tacto": "4 horas",
+        "tiempo_repinte": "24 horas", "manos_recomendadas": 2,
+        "usos": "Impermeabilizante - fachadas - techos - exterior",
+        "superficie": "concreto, estuco, mamposteria, fibrocemento"
+    },
+    "Otra Sherwin-Williams": {
+        "cobertura_m2_galon": 32, "acabado": "variable",
+        "dilucion": "segun ficha", "tiempo_secado_tacto": "variable",
+        "tiempo_repinte": "variable", "manos_recomendadas": 2,
+        "usos": "Consultar ficha tecnica",
+        "superficie": "Consultar ficha tecnica"
     }
 }
 
 # ==============================================================
 # UI PRINCIPAL
 # ==============================================================
-st.title("Construccion OBRIXA AI")
+st.title("🏗️ OBRIXA AI — Panel de gestión")
 
 with st.sidebar:
-    st.header("Configuracion")
+    st.header("⚙️ Configuracion")
     moneda_display = st.selectbox("Moneda", ["COP", "USD", "EUR", "MXN"])
     tasas = obtener_tasas()
-    st.caption(f"USD a COP: ${tasas.get('COP', 4100):,.0f}")
+    st.caption(f"USD → COP: ${tasas.get('COP', 4100):,.0f}")
     st.divider()
-    st.subheader("Documentos cargados")
+    st.subheader("📄 Documentos cargados")
     _df_side = listar_documentos()
     if _df_side.empty:
         st.caption("Sin documentos aun.")
     else:
-        _res = _df_side[["fuente", "producto", "proveedor"]].drop_duplicates("fuente")
-        st.caption(f"{len(_df_side)} fragmentos - {len(_res)} archivos")
+        _res = _df_side[["fuente", "producto", "proveedor", "tipo"]].drop_duplicates("fuente")
+        fichas = len(_res[_res["tipo"] == "ficha_tecnica"]) if "tipo" in _res.columns else 0
+        precios = len(_res[_res["tipo"] == "precio"]) if "tipo" in _res.columns else 0
+        st.caption(f"{len(_df_side)} fragmentos | {fichas} fichas | {precios} listas de precios")
         st.dataframe(_res, use_container_width=True, hide_index=True)
-    if st.button("Refrescar lista"):
+    if st.button("🔄 Refrescar lista"):
         st.rerun()
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "Cargar Documentos",
-    "Consultar",
-    "Cotizador",
-    "Precios",
-    "Precios Web"
+    "📁 Cargar Documentos",
+    "🔍 Consultar",
+    "🧮 Cotizador",
+    "💰 Precios",
+    "🌐 Precios Web"
 ])
 
 # ==============================================================
 # TAB 1: CARGAR
 # ==============================================================
 with tab1:
-    st.subheader("Carga fichas tecnicas, listas de precios e imagenes")
-    st.caption("Formatos: PDF - Excel XLSX - Imagen JPG PNG WEBP")
+    st.subheader("Carga fichas tecnicas y listas de precios")
+    st.caption("Formatos soportados: PDF · Excel XLSX · Imagen JPG/PNG/WEBP")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -497,23 +504,26 @@ with tab1:
             "Selecciona archivo",
             type=["pdf", "xlsx", "xls", "png", "jpg", "jpeg", "webp"]
         )
-        producto_input  = st.text_input("Producto / categoria")
-        proveedor_input = st.text_input("Proveedor")
-        modo_carga = st.radio(
+        producto_input  = st.text_input("Producto / categoria", placeholder="SuperPaint Exterior")
+        proveedor_input = st.text_input("Proveedor", placeholder="Sherwin-Williams")
+
+        # ✅ Selector de tipo para clasificar correctamente
+        tipo_contenido = st.radio(
             "Tipo de contenido",
-            ["Ficha tecnica / texto", "Lista de precios (tabla)"]
+            ["ficha_tecnica", "precio"],
+            format_func=lambda x: "📋 Ficha técnica" if x == "ficha_tecnica" else "💰 Lista de precios"
         )
+
     with col2:
         if archivo:
             ext = archivo.name.split(".")[-1].lower()
-            st.success(f"Listo: {archivo.name}")
+            st.success(f"✅ Archivo listo: {archivo.name}")
             if ext in ["jpg", "jpeg", "png", "webp"]:
                 st.image(archivo, use_container_width=True)
                 archivo.seek(0)
-                # Borra versión anterior si existe
                 borrar_documento(archivo.name)
 
-    if st.button("Procesar y guardar en Supabase", type="primary"):
+    if st.button("⬆️ Procesar y guardar en Supabase", type="primary"):
         if archivo is None:
             st.warning("Selecciona un archivo.")
         elif not producto_input or not proveedor_input:
@@ -522,7 +532,6 @@ with tab1:
             ext = archivo.name.split(".")[-1].lower()
             with st.spinner(f"Procesando {archivo.name}..."):
 
-                # ── EXCEL ──
                 if ext in ["xlsx", "xls"]:
                     df_ex = leer_excel(archivo)
                     if df_ex.empty:
@@ -532,22 +541,10 @@ with tab1:
                         ok = 0
                         for _, row in df_ex.iterrows():
                             txt = " | ".join(f"{c}: {v}" for c, v in row.items() if pd.notna(v))
-                            if guardar_documento(txt, archivo.name, producto_input, proveedor_input):
+                            if guardar_documento(txt, archivo.name, producto_input, proveedor_input, tipo_contenido):
                                 ok += 1
-                        cols_l = [c.lower() for c in df_ex.columns]
-                        if "producto" in cols_l and "precio" in cols_l:
-                            cp = df_ex.columns[cols_l.index("producto")]
-                            cv = df_ex.columns[cols_l.index("precio")]
-                            for _, row in df_ex.iterrows():
-                                try:
-                                    pv = str(row[cv]).replace(",", "").replace(".", "").strip()
-                                    if pv.isdigit():
-                                        guardar_precio(str(row[cp]), int(pv), proveedor_input)
-                                except Exception:
-                                    pass
-                        st.success(f"OK: {ok} filas guardadas desde Excel")
+                        st.success(f"✅ {ok} filas guardadas desde Excel")
 
-                # ── IMAGEN ──
                 elif ext in ["jpg", "jpeg", "png", "webp"]:
                     st.info("Enviando a GPT-4o Vision...")
                     txt_img = leer_imagen_con_ia(archivo)
@@ -555,41 +552,30 @@ with tab1:
                         with st.expander("Texto extraido"):
                             st.write(txt_img)
                         chunks = dividir_texto(txt_img)
-                        ok = sum(1 for c in chunks if guardar_documento(c, archivo.name, producto_input, proveedor_input))
-                        st.success(f"OK: {ok} fragmentos guardados desde imagen")
+                        ok = sum(1 for c in chunks if guardar_documento(c, archivo.name, producto_input, proveedor_input, tipo_contenido))
+                        st.success(f"✅ {ok} fragmentos guardados desde imagen")
 
-                # ── PDF ──
                 elif ext == "pdf":
-                    if modo_carga == "Lista de precios (tabla)":
+                    if tipo_contenido == "precio":
                         df_p = extraer_tabla_precios_pdf(archivo)
-                        if df_p.empty:
-                            st.warning("No se encontraron tablas. Prueba con Ficha tecnica.")
-                        else:
+                        if not df_p.empty:
                             st.dataframe(df_p, use_container_width=True)
                             for _, row in df_p.iterrows():
                                 guardar_precio(row["producto"], row["precio"], proveedor_input)
-                            archivo.seek(0)
-                            txt_pdf = leer_pdf(archivo)
-                            if txt_pdf:
-                                chunks = dividir_texto(txt_pdf)
-                                ok = sum(1 for c in chunks if guardar_documento(c, archivo.name, producto_input, proveedor_input))
-                                st.success(f"OK: {len(df_p)} precios + {ok} fragmentos guardados")
-                            else:
-                                st.success(f"OK: {len(df_p)} precios guardados")
-                            st.download_button(
-                                "Descargar Excel",
-                                data=exportar_excel(df_p),
-                                file_name=f"precios_{proveedor_input}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            )
+                        archivo.seek(0)
+                        txt_pdf = leer_pdf(archivo)
+                        if txt_pdf:
+                            chunks = dividir_texto(txt_pdf)
+                            ok = sum(1 for c in chunks if guardar_documento(c, archivo.name, producto_input, proveedor_input, "precio"))
+                            st.success(f"✅ {len(df_p) if not df_p.empty else 0} precios + {ok} fragmentos guardados")
                     else:
                         txt = leer_pdf(archivo)
                         if not txt.strip():
-                            st.error("No se pudo leer el PDF. Si es escaneado usa la imagen JPG/PNG.")
+                            st.error("No se pudo leer el PDF. Si es escaneado usa imagen JPG/PNG.")
                         else:
                             chunks = dividir_texto(txt)
-                            ok = sum(1 for c in chunks if guardar_documento(c, archivo.name, producto_input, proveedor_input))
-                            st.success(f"OK: {ok} de {len(chunks)} fragmentos guardados")
+                            ok = sum(1 for c in chunks if guardar_documento(c, archivo.name, producto_input, proveedor_input, "ficha_tecnica"))
+                            st.success(f"✅ {ok} de {len(chunks)} fragmentos guardados como ficha_tecnica")
                             with st.expander("Ver texto extraido"):
                                 st.text(txt[:3000])
 
@@ -597,110 +583,128 @@ with tab1:
 # TAB 2: CONSULTAR
 # ==============================================================
 with tab2:
-    st.subheader("Consulta inteligente sobre tus documentos")
+    st.subheader("🔍 Consulta inteligente sobre tus documentos")
 
     total = contar_documentos()
     if total > 0:
-        st.caption(f"Fragmentos disponibles: {total}")
+        st.caption(f"Fragmentos disponibles en Supabase: {total}")
     else:
-        st.info("Aun no hay documentos. Carga archivos en Cargar Documentos.")
+        st.info("Aun no hay documentos. Carga archivos en la pestaña Cargar Documentos.")
 
-    pregunta = st.text_input(
-        "Que necesitas saber?",
-        placeholder="Precio teja colonial terracota? Caracteristicas Viniltex?"
-    )
-    modo_ia = st.radio("Modo", ["general", "precios"], horizontal=True)
+    col_q1, col_q2 = st.columns([3, 1])
+    with col_q1:
+        pregunta = st.text_input(
+            "¿Que necesitas saber?",
+            placeholder="¿Qué pintura uso para estructura metálica? ¿Cuántos m2 rinde el SuperPaint?"
+        )
+    with col_q2:
+        tipo_busqueda = st.selectbox("Tipo", ["Todos", "ficha_tecnica", "precio"])
+        modo_ia = st.radio("Modo IA", ["general", "ficha"], horizontal=True)
 
-    if st.button("Consultar", type="primary"):
+    if st.button("🔍 Consultar", type="primary"):
         if not pregunta:
             st.warning("Escribe una pregunta.")
         elif total == 0:
             st.warning("Carga documentos primero.")
         else:
-            with st.spinner("Buscando..."):
-                resultados = buscar_documentos(pregunta)
+            tipo_filtro = None if tipo_busqueda == "Todos" else tipo_busqueda
+            with st.spinner("Buscando en Supabase..."):
+                resultados = buscar_documentos(pregunta, tipo=tipo_filtro)
+
             if not resultados:
                 st.warning("No encontre informacion. Intenta con otras palabras.")
             else:
                 contexto = "\n\n".join([r["contenido"] for r in resultados])
                 col_ctx, col_res = st.columns(2)
                 with col_ctx:
-                    with st.expander(f"{len(resultados)} fragmentos encontrados"):
+                    with st.expander(f"📄 {len(resultados)} fragmentos encontrados"):
                         for r in resultados:
-                            st.caption(f"{r.get('producto','')} - {r.get('proveedor','')} - {r.get('fuente','')}")
+                            st.caption(f"📌 {r.get('producto','')} | {r.get('proveedor','')} | Tipo: {r.get('tipo','')}")
                             st.text(r["contenido"][:400])
                             st.divider()
                 with col_res:
-                    st.markdown("### Respuesta")
+                    st.markdown("### 💡 Respuesta")
                     st.write(responder_con_ia(contexto, pregunta, modo_ia))
 
 # ==============================================================
-# TAB 3: COTIZADOR
+# TAB 3: COTIZADOR — Solo Tejas y Pinturas SW
 # ==============================================================
 with tab3:
-    st.subheader("Cotizador de materiales")
-    categoria = st.selectbox("Tipo de material", ["pintura", "teja", "baldosa", "cemento", "acero", "ladrillo"])
-    largo = ancho = grosor = area = cobertura = rendimiento = traslapo = precio_unitario = 0.0
-    num_manos = 1
+    st.subheader("🧮 Cotizador — Tejas y Pinturas Sherwin-Williams")
+
+    categoria = st.selectbox("Tipo de material", ["pintura", "teja"])
 
     col_a, col_b = st.columns(2)
     with col_a:
+        largo = ancho = area = cobertura = precio_unitario = traslapo = 0.0
+        num_manos = 2
+
         if categoria == "pintura":
-            area      = st.number_input("Area (m2)", value=20.0, min_value=0.1)
-            num_manos = st.number_input("Numero de manos", value=2, min_value=1, max_value=4)
-            marca     = st.selectbox("Marca", list(PINTURAS_DB.keys()) + ["Otra"])
-            info      = PINTURAS_DB.get(marca, {})
-            cobertura = st.number_input(
-                f"Cobertura m2/galon (sugerida: {info.get('cobertura_m2_galon', 30)})",
-                value=float(info.get("cobertura_m2_galon", 30))
-            )
+            marca = st.selectbox("Producto Sherwin-Williams", list(PINTURAS_SW.keys()))
+            info  = PINTURAS_SW.get(marca, {})
+
             if info:
                 st.info(
-                    f"Acabado: {info['acabado']} | Dilucion: {info['dilucion']} | "
-                    f"Secado: {info['tiempo_secado_tacto']} | Repinte: {info['tiempo_repinte']} | "
-                    f"Usos: {info['usos']}"
+                    f"**Superficies:** {info.get('superficie','')}\n\n"
+                    f"**Acabado:** {info.get('acabado','')} | "
+                    f"**Dilucion:** {info.get('dilucion','')} | "
+                    f"**Secado:** {info.get('tiempo_secado_tacto','')} | "
+                    f"**Repinte:** {info.get('tiempo_repinte','')} | "
+                    f"**Manos sugeridas:** {info.get('manos_recomendadas','')}"
                 )
+
+            area = st.number_input("Area a pintar (m2)", value=20.0, min_value=0.1)
+            num_manos = st.number_input(
+                f"Numero de manos (sugeridas: {info.get('manos_recomendadas', 2)})",
+                value=int(info.get("manos_recomendadas", 2)),
+                min_value=1, max_value=4
+            )
+            cobertura = st.number_input(
+                f"Rendimiento m2/galon (referencia: {info.get('cobertura_m2_galon', 32)})",
+                value=float(info.get("cobertura_m2_galon", 32))
+            )
             precio_unitario = st.number_input(f"Precio por galon ({moneda_display})", value=80000.0)
 
-        elif categoria in ["teja", "baldosa", "ladrillo"]:
-            area     = st.number_input("Area total (m2)", value=30.0)
-            largo    = st.number_input("Largo unidad (m)", value=0.40)
-            ancho    = st.number_input("Ancho unidad (m)", value=0.20)
+            # Consultar fichas técnicas del producto seleccionado
+            if st.button("📋 Ver ficha técnica completa"):
+                with st.spinner("Buscando ficha tecnica..."):
+                    resultados_ficha = buscar_documentos(marca, tipo="ficha_tecnica")
+                if resultados_ficha:
+                    contexto_ficha = "\n\n".join([r["contenido"] for r in resultados_ficha])
+                    st.markdown("### 📋 Ficha Técnica")
+                    st.write(responder_con_ia(contexto_ficha, f"ficha tecnica de {marca}", "ficha"))
+                else:
+                    st.info(f"No hay ficha tecnica cargada para {marca}. Cargala en la pestaña Cargar Documentos.")
+
+        elif categoria == "teja":
+            area     = st.number_input("Area total del techo (m2)", value=30.0)
+            largo    = st.number_input("Largo de la teja (m)", value=11.80)
+            ancho    = st.number_input("Ancho de la teja (m)", value=1.075)
             traslapo = st.number_input("Traslapo / desperdicio (%)", value=10.0) / 100
-            precio_unitario = st.number_input(f"Precio por unidad ({moneda_display})", value=1500.0)
-
-        elif categoria == "cemento":
-            area        = st.number_input("Area (m2)", value=20.0)
-            grosor      = st.number_input("Grosor mezcla (m)", value=0.10)
-            rendimiento = st.number_input("Sacos 50kg por m3", value=7.0)
-            precio_unitario = st.number_input(f"Precio por saco ({moneda_display})", value=35000.0)
-
-        elif categoria == "acero":
-            largo   = st.number_input("Longitud total (m)", value=50.0)
-            ancho   = st.number_input("Ancho seccion (m)", value=0.012)
-            grosor  = st.number_input("Grosor seccion (m)", value=0.012)
-            precio_unitario = st.number_input(f"Precio varilla 12m ({moneda_display})", value=45000.0)
+            precio_unitario = st.number_input(f"Precio por teja ({moneda_display})", value=0.0)
+            st.caption("Referencia: Teja UPVC/Policarbonato JMUNDIAL — largo 11.80m x ancho 1.075m")
 
     with col_b:
-        if st.button("Calcular", type="primary"):
+        if st.button("🧮 Calcular", type="primary"):
             res = calcular_material(
                 categoria=categoria, area=area, largo=largo, ancho=ancho,
-                grosor=grosor, cobertura=cobertura, precio_unitario=precio_unitario,
-                rendimiento=rendimiento, traslapo=traslapo, num_manos=int(num_manos)
+                cobertura=cobertura, precio_unitario=precio_unitario,
+                traslapo=traslapo, num_manos=int(num_manos)
             )
             if res:
-                st.markdown("#### Resultado")
+                st.markdown("#### 📊 Resultado")
                 pt = res.get("precio_total", 0)
                 if moneda_display != "COP":
                     pt = convertir_precio(pt, "COP", moneda_display)
                 for k, v in res.items():
                     if k == "precio_total":
-                        st.metric("PRECIO TOTAL", f"{moneda_display} {pt:,.0f}")
+                        st.metric("PRECIO TOTAL ESTIMADO", f"{moneda_display} {pt:,.0f}")
                     else:
                         st.write(f"**{k.replace('_',' ').title()}:** {v}")
-                df_r = pd.DataFrame([{**res, "material": categoria, "moneda": moneda_display}])
+
+                df_r = pd.DataFrame([{**res, "material": categoria, "producto": marca if categoria == "pintura" else "Teja", "moneda": moneda_display}])
                 st.download_button(
-                    "Exportar Excel",
+                    "📥 Exportar Excel",
                     data=exportar_excel(df_r),
                     file_name=f"cotizacion_{categoria}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -710,9 +714,9 @@ with tab3:
 # TAB 4: PRECIOS
 # ==============================================================
 with tab4:
-    st.subheader("Consulta de precios guardados")
-    buscar_prod = st.text_input("Buscar producto", placeholder="cemento, pintura, varilla...")
-    if st.button("Buscar precios"):
+    st.subheader("💰 Consulta de precios guardados")
+    buscar_prod = st.text_input("Buscar producto", placeholder="teja, superpaint, elastomerica...")
+    if st.button("🔍 Buscar precios"):
         df_p2 = buscar_precios(buscar_prod)
         if df_p2.empty:
             st.info("No hay precios para ese producto.")
@@ -723,65 +727,34 @@ with tab4:
                 )
             st.dataframe(df_p2, use_container_width=True)
             st.download_button(
-                "Exportar Excel",
+                "📥 Exportar Excel",
                 data=exportar_excel(df_p2),
                 file_name="precios.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
 
 # ==============================================================
-# TAB 5: PRECIOS WEB
+# TAB 5: SHERWIN-WILLIAMS
 # ==============================================================
 with tab5:
-    st.subheader("Extraccion de precios desde paginas web")
-    st.caption("Sitios con JavaScript como Sherwin-Williams pueden requerir URL directa del producto.")
-
-    url_input  = st.text_input("URL", placeholder="https://ferreteriaX.com/precios")
-    sel_prod   = st.text_input("Selector CSS producto (opcional)", placeholder=".product-name")
-    sel_precio = st.text_input("Selector CSS precio (opcional)",   placeholder=".product-price")
-
-    if st.button("Extraer precios", type="primary"):
-        if not url_input:
-            st.warning("Escribe una URL.")
-        else:
-            with st.spinner("Extrayendo..."):
-                df_web = scrape_precios(url_input, sel_prod or None, sel_precio or None)
-            if not df_web.empty:
-                st.success(f"OK: {len(df_web)} productos encontrados")
-                st.dataframe(df_web, use_container_width=True)
-                prov_web = st.text_input("Proveedor", value="Web")
-                if st.button("Guardar en Supabase"):
-                    for _, row in df_web.iterrows():
-                        p = str(row["precio"]).replace(".", "").replace(",", "").strip()
-                        if p.isdigit():
-                            guardar_precio(row["producto"], int(p), prov_web)
-                    st.success("Guardado.")
-                st.download_button(
-                    "Exportar Excel",
-                    data=exportar_excel(df_web),
-                    file_name="precios_web.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-
-    st.divider()
-    st.subheader("Buscar producto especifico en Sherwin-Williams")
+    st.subheader("🎨 Buscar producto Sherwin-Williams")
+    st.caption("Busca informacion de cualquier producto SW directamente desde su sitio web.")
 
     col_sw1, col_sw2 = st.columns(2)
     with col_sw1:
         url_sw = st.text_input(
-            "URL directa del producto",
-            placeholder="https://www.sherwin-williams.com/painting-contractors/products/minwax-waterbased-wood-staincanada",
-            help="Pega la URL exacta de la pagina del producto"
+            "URL directa del producto (opcional)",
+            placeholder="https://www.sherwin-williams.com/painting-contractors/products/..."
         )
         nombre_sw = st.text_input(
             "Nombre del producto",
-            placeholder="Minwax Water-Based Wood Stain"
+            placeholder="SuperPaint Exterior, Duration, Emerald..."
         )
     with col_sw2:
-        guardar_resultado = st.checkbox("Guardar resultado en Supabase")
+        guardar_resultado = st.checkbox("Guardar resultado en Supabase como ficha_tecnica")
         proveedor_sw = st.text_input("Proveedor", value="Sherwin-Williams")
 
-    if st.button("Buscar y traducir propiedades", type="primary"):
+    if st.button("🔍 Buscar y traducir propiedades", type="primary"):
         if not nombre_sw:
             st.warning("Escribe el nombre del producto.")
         else:
@@ -795,7 +768,7 @@ with tab5:
             with st.spinner("Extrayendo y traduciendo propiedades..."):
                 resultado = traducir_y_extraer_con_ia(texto_pagina, nombre_sw)
 
-            st.markdown("### Propiedades del producto")
+            st.markdown("### 📋 Propiedades del producto")
             st.write(resultado)
 
             if guardar_resultado and resultado:
@@ -803,6 +776,7 @@ with tab5:
                     resultado,
                     f"SW - {nombre_sw}",
                     nombre_sw,
-                    proveedor_sw
+                    proveedor_sw,
+                    "ficha_tecnica"
                 )
-                st.success("Guardado en Supabase. Ya puedes consultarlo desde Consultar.")
+                st.success("✅ Guardado en Supabase como ficha_tecnica. Ya puedes consultarlo desde Consultar.")
