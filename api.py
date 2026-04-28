@@ -257,14 +257,8 @@ def detectar_material(texto: str):
     t = quitar_tildes(texto.lower())
     if any(x in t for x in ["teja", "techo", "cubierta"]):
         return "teja"
-    if any(x in t for x in ["pintura", "pintar", "galon", "galón"]):
+    if any(x in t for x in ["pintura", "pintar", "galon", "galón", "sherwin", "sw", "superpaint", "elastomerica", "acrolon", "duration"]):
         return "pintura"
-    if any(x in t for x in ["cemento", "mortero", "pega"]):
-        return "cemento"
-    if any(x in t for x in ["hierro", "acero", "varilla", "fierro"]):
-        return "acero"
-    if any(x in t for x in ["ladrillo", "bloque", "brick"]):
-        return "ladrillo"
     return None
 
 def extraer_numero(texto: str):
@@ -293,21 +287,15 @@ MENU_MATERIALES = (
     "Con gusto te ayudo a cotizar.\n\n"
     "¿Que material necesitas?\n\n"
     "1. Teja\n"
-    "2. Pintura\n"
-    "3. Cemento\n"
-    "4. Hierro / Varilla\n"
-    "5. Ladrillo\n\n"
+    "2. Pintura Sherwin-Williams\n\n"
     "Escribe el numero o el nombre del material."
 )
 
 MENU_PRECIOS = (
     "¿Sobre que producto quieres consultar precios?\n\n"
     "1. Teja\n"
-    "2. Pintura\n"
-    "3. Cemento\n"
-    "4. Hierro / Varilla\n"
-    "5. Ladrillo\n"
-    "6. Todos los productos\n\n"
+    "2. Pintura Sherwin-Williams\n"
+    "3. Todos los productos\n\n"
     "Escribe el numero o el nombre."
 )
 
@@ -315,9 +303,10 @@ MENU_FICHAS = (
     "¿De que producto necesitas la ficha tecnica?\n\n"
     "1. Teja UPVC\n"
     "2. Teja Policarbonato\n"
-    "3. WPC Interior/Exterior\n"
-    "4. Piso Deck / Piso SPC\n"
-    "5. Cielo Raso\n\n"
+    "3. SuperPaint Exterior\n"
+    "4. SuperPaint Interior\n"
+    "5. Elastomerica\n"
+    "6. Otro producto Sherwin-Williams\n\n"
     "Escribe el nombre del producto."
 )
 
@@ -482,20 +471,19 @@ def consultar(req: ConsultaRequest):
                 mapa_fichas = {
                     "1": "teja upvc", "teja upvc": "teja upvc", "upvc": "teja upvc",
                     "2": "policarbonato", "policarbonato": "policarbonato",
-                    "3": "wpc", "wpc": "wpc",
-                    "4": "piso deck", "piso spc": "piso deck", "deck": "piso deck", "spc": "piso deck",
-                    "5": "cielo raso", "cielo raso": "cielo raso", "cielo": "cielo raso",
+                    "3": "superpaint exterior", "superpaint exterior": "superpaint exterior",
+                    "4": "superpaint interior", "superpaint interior": "superpaint interior",
+                    "5": "elastomerica", "elastomerica": "elastomerica",
+                    "6": "sherwin", "otro": "sherwin",
                 }
                 termino_ficha = mapa_fichas.get(msg.strip(), None)
                 if termino_ficha is None:
-                    # Buscar por palabras clave en el mensaje
                     for k, v in mapa_fichas.items():
                         if k in msg:
                             termino_ficha = v
                             break
-
-                if not termino_ficha:
-                    return r("No reconoci el producto.\n\n" + MENU_FICHAS)
+                    if termino_ficha is None:
+                        termino_ficha = msg.strip()
 
                 borrar_sesion(telefono)
                 resultados = buscar_documentos(termino_ficha, tipo="ficha_tecnica")
@@ -504,24 +492,19 @@ def consultar(req: ConsultaRequest):
                     respuesta = responder_con_ia(contexto, termino_ficha, "ficha")
                     fuentes = list(set([r_.get("fuente", "") for r_ in resultados]))
                     return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
-                return r(f"No encontre ficha tecnica de {termino_ficha}.\n\nEscribe *2* para ver el menu de fichas.")
+                return r(f"No encontre ficha tecnica de {termino_ficha}.\n\nEscribe el nombre exacto del producto SW.")
 
             # ── Estado: consultando precios por producto ──
             if estado == "consultando_precios":
-                # Mapeo número → término de búsqueda
                 mapa = {
                     "1": "teja", "teja": "teja",
-                    "2": "pintura", "pintura": "pintura",
-                    "3": "cemento", "cemento": "cemento",
-                    "4": "hierro", "hierro": "hierro", "varilla": "hierro", "acero": "hierro",
-                    "5": "ladrillo", "ladrillo": "ladrillo", "brick": "ladrillo",
-                    "6": "todos", "todos": "todos",
+                    "2": "pintura", "pintura": "pintura", "sherwin": "pintura", "sw": "pintura",
+                    "3": "todos", "todos": "todos",
                 }
                 termino = mapa.get(msg.strip(), None)
                 if termino is None:
-                    # Intentar detectar por nombre
                     mat_tmp = detectar_material(req.pregunta)
-                    termino = "hierro" if mat_tmp == "acero" else mat_tmp
+                    termino = mat_tmp
 
                 if termino == "todos":
                     resultados = buscar_documentos("precios materiales construccion", tipo="precio")
@@ -542,14 +525,8 @@ def consultar(req: ConsultaRequest):
             if estado == "esperando_material":
                 if msg in ["1", "1.", "teja", "techo", "cubierta"]:
                     mat = "teja"
-                elif msg in ["2", "2.", "pintura", "pintar"]:
+                elif msg in ["2", "2.", "pintura", "pintar", "sherwin", "sw", "superpaint"]:
                     mat = "pintura"
-                elif msg in ["3", "3.", "cemento", "mortero"]:
-                    mat = "cemento"
-                elif msg in ["4", "4.", "hierro", "varilla", "acero", "fierro"]:
-                    mat = "acero"
-                elif msg in ["5", "5.", "ladrillo", "bloque", "brick"]:
-                    mat = "ladrillo"
                 else:
                     mat = mat_detectado
 
@@ -593,20 +570,25 @@ def consultar(req: ConsultaRequest):
                     return r(f"Tenemos estos ladrillos disponibles:\n\n{opciones_txt}\n\n¿Cual necesitas? Escribe el numero.")
 
                 elif mat == "pintura":
-                    precios = get_precios_material("pintura")
-                    if precios:
-                        precio_p = float(precios[0]["precio"])
-                        descripcion = precios[0].get("descripcion", "Pintura")
-                        set_sesion(telefono, "esperando_area", "pintura", {
-                            "precio_unitario": precio_p,
-                            "cobertura": 40.0,
-                            "descripcion": descripcion,
-                            "num_manos": 2
-                        })
-                        return r(f"*{descripcion}*\nPrecio: ${precio_p:,.0f}/galon | Rendimiento: 40 m2/galon\n\n¿Cuantos m2 vas a pintar?")
-                    else:
-                        set_sesion(telefono, "esperando_area", "pintura", {"num_manos": 2, "cobertura": 40.0})
-                        return r("Pintura anotado.\n\n¿Cuantos m2 vas a pintar?")
+                    # Mostrar opciones de Sherwin-Williams
+                    opciones_sw = [
+                        {"descripcion": "SuperPaint Exterior SW", "cobertura": 33, "manos": 2},
+                        {"descripcion": "SuperPaint Interior SW", "cobertura": 33, "manos": 2},
+                        {"descripcion": "Elastomerica SW", "cobertura": 17, "manos": 2},
+                        {"descripcion": "Otro producto SW", "cobertura": 32, "manos": 2},
+                    ]
+                    # Agregar precios de DB si existen
+                    precios_db = get_precios_material("pintura")
+                    precio_ref = float(precios_db[0]["precio"]) if precios_db else 0
+                    opciones_txt = "\n".join([
+                        f"{i+1}. {o['descripcion']} | Rinde: {o['cobertura']} m2/galon"
+                        for i, o in enumerate(opciones_sw)
+                    ])
+                    set_sesion(telefono, "esperando_tipo_pintura", "pintura", {
+                        "opciones": opciones_sw,
+                        "precio_ref": precio_ref
+                    })
+                    return r(f"Pinturas Sherwin-Williams disponibles:\n\n{opciones_txt}\n\n¿Cual necesitas? Escribe el numero.")
 
                 elif mat == "cemento":
                     precios = get_precios_material("cemento")
@@ -663,29 +645,32 @@ def consultar(req: ConsultaRequest):
                 else:
                     return r("Escribe el numero de la teja. Ejemplo: *1*")
 
-            # ── Estado: selección de tipo de ladrillo ──
-            elif estado == "esperando_tipo_ladrillo":
+            # ── Estado: selección de tipo de pintura SW ──
+            elif estado == "esperando_tipo_pintura":
                 opciones = datos.get("opciones", [])
+                precio_ref = datos.get("precio_ref", 0)
                 num = extraer_numero(msg)
                 if num is not None:
                     idx = int(num) - 1
                     if 0 <= idx < len(opciones):
-                        ladrillo = opciones[idx]
-                        set_sesion(telefono, "esperando_area", "ladrillo", {
-                            "precio_unitario": ladrillo["precio"],
-                            "descripcion": ladrillo["descripcion"],
-                            "rendimiento": ladrillo.get("rendimiento", 56)
+                        pintura = opciones[idx]
+                        set_sesion(telefono, "esperando_area", "pintura", {
+                            "precio_unitario": precio_ref,
+                            "cobertura": pintura["cobertura"],
+                            "descripcion": pintura["descripcion"],
+                            "num_manos": pintura["manos"]
                         })
-                        precio_txt = f"${ladrillo['precio']:,.0f}/und" if ladrillo["precio"] > 0 else "Precio a consultar"
+                        precio_txt = f"${precio_ref:,.0f}/galon" if precio_ref > 0 else "Precio a consultar"
                         return r(
-                            f"*{ladrillo['descripcion']}* seleccionado.\n"
-                            f"Rendimiento: {ladrillo.get('rendimiento', 56)} und/m2 | {precio_txt}\n\n"
-                            f"¿Cuantos m2 de muro vas a construir?"
+                            f"*{pintura['descripcion']}* seleccionada.\n"
+                            f"Rendimiento: {pintura['cobertura']} m2/galon | {precio_txt}\n"
+                            f"Manos recomendadas: {pintura['manos']}\n\n"
+                            f"¿Cuantos m2 vas a pintar?"
                         )
                     else:
                         return r(f"Por favor elige un numero entre 1 y {len(opciones)}.")
                 else:
-                    return r("Escribe el numero del ladrillo. Ejemplo: *1*")
+                    return r("Escribe el numero de la pintura. Ejemplo: *1*")
 
             # ── Estado: recibe el área ──
             elif estado == "esperando_area":
