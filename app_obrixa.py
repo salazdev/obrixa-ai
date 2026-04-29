@@ -185,16 +185,32 @@ def borrar_documento(fuente):
 
 def guardar_documento(texto, fuente, producto, proveedor, tipo="precio"):
     """
-    ✅ CORRECCIÓN: agregado campo 'tipo' para clasificar correctamente en embeddings
-    tipo puede ser: 'precio', 'ficha_tecnica'
+    Guarda fragmento en Supabase y genera embedding automáticamente.
     """
     try:
+        # Generar embedding vectorial
+        try:
+            resp = openai_client.embeddings.create(
+                model="text-embedding-ada-002",
+                input=texto[:8000]
+            )
+            embedding = resp.data[0].embedding
+        except Exception as e:
+            print(f"Warning embedding: {e}")
+            embedding = None
+
         conn = get_conn()
         cur  = conn.cursor()
-        cur.execute(
-            "INSERT INTO embeddings (contenido, fuente, producto, proveedor, tipo) VALUES (%s,%s,%s,%s,%s)",
-            (texto, fuente, producto, proveedor, tipo)
-        )
+        if embedding:
+            cur.execute(
+                "INSERT INTO embeddings (contenido, fuente, producto, proveedor, tipo, embedding) VALUES (%s,%s,%s,%s,%s,%s::vector)",
+                (texto, fuente, producto, proveedor, tipo, embedding)
+            )
+        else:
+            cur.execute(
+                "INSERT INTO embeddings (contenido, fuente, producto, proveedor, tipo) VALUES (%s,%s,%s,%s,%s)",
+                (texto, fuente, producto, proveedor, tipo)
+            )
         conn.commit()
         cur.close()
         conn.close()
