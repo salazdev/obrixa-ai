@@ -268,6 +268,37 @@ def buscar_documentos(pregunta, tipo=None):
         st.warning(f"Error busqueda: {e}")
         return []
 
+def buscar_todos_fichas(limite=60):
+    """Trae un resumen de TODAS las fichas técnicas para preguntas de recomendación."""
+    try:
+        conn = get_conn()
+        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "SELECT contenido, producto, fuente FROM embeddings WHERE tipo = 'ficha_tecnica' LIMIT %s",
+            (limite,)
+        )
+        rows = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return rows
+    except Exception as e:
+        st.warning(f"Error busqueda amplia: {e}")
+        return []
+
+def es_pregunta_recomendacion(pregunta: str) -> bool:
+    """Detecta si el usuario busca una recomendación de producto."""
+    keywords = [
+        "que pintura", "qué pintura", "cual pintura", "cuál pintura",
+        "recomienda", "recomendas", "para pintar", "para proteger",
+        "mejor para", "cual usar", "cuál usar", "que usar", "qué usar",
+        "que producto", "qué producto", "para mamposteria", "para fachada",
+        "para metal", "para madera", "para piso", "para techo",
+        "para exterior", "para interior", "para humedad", "anticorrosivo",
+        "impermeabilizar", "sellador", "que me sirve", "qué me sirve"
+    ]
+    t = pregunta.lower()
+    return any(k in t for k in keywords)
+
 def buscar_precios(nombre):
     try:
         conn = get_conn()
@@ -318,6 +349,18 @@ def responder_con_ia(contexto, pregunta, modo="general"):
             "Incluye: usos recomendados, superficies compatibles, rendimiento en m2 por galon, "
             "tiempo de secado, dilucion, numero de manos y advertencias importantes. "
             "Responde en espanol."
+        )
+    elif modo == "recomendacion":
+        system = (
+            "Eres un asesor experto en pinturas Sherwin-Williams para Colombia. "
+            "El cliente te hace una pregunta sobre que producto usar. "
+            "Analiza TODAS las fichas tecnicas disponibles en el contexto y recomienda "
+            "el producto MAS ADECUADO para la necesidad del cliente. "
+            "SIEMPRE menciona el nombre exacto del producto recomendado. "
+            "Explica por que ese producto es el ideal, sus caracteristicas clave, "
+            "rendimiento en m2 por galon, y como aplicarlo. "
+            "Si hay mas de un producto adecuado, mencionalos en orden de recomendacion. "
+            "Responde en espanol de forma clara y profesional."
         )
     else:
         system = (
@@ -639,11 +682,11 @@ with tab2:
     with col_q1:
         pregunta = st.text_input(
             "¿Que necesitas saber?",
-            placeholder="¿Qué pintura uso para estructura metálica? ¿Cuántos m2 rinde el SuperPaint?"
+            placeholder="¿Qué pintura uso para mampostería exterior? ¿Cuántos m2 rinde el KEM LÁTEX?"
         )
     with col_q2:
         tipo_busqueda = st.selectbox("Tipo", ["Todos", "ficha_tecnica", "precio"])
-        modo_ia = st.radio("Modo IA", ["general", "ficha"], horizontal=True)
+        modo_ia = st.radio("Modo IA", ["general", "ficha", "recomendacion"], horizontal=True)
 
     if st.button("🔍 Consultar", type="primary"):
         if not pregunta:
@@ -652,8 +695,19 @@ with tab2:
             st.warning("Carga documentos primero.")
         else:
             tipo_filtro = None if tipo_busqueda == "Todos" else tipo_busqueda
+
+            # ── Detección automática de preguntas de recomendación ──
+            es_recomendacion = es_pregunta_recomendacion(pregunta) or modo_ia == "recomendacion"
+
             with st.spinner("Buscando en Supabase..."):
-                resultados = buscar_documentos(pregunta, tipo=tipo_filtro)
+                if es_recomendacion:
+                    # Búsqueda amplia — trae TODAS las fichas para que la IA elija
+                    resultados = buscar_todos_fichas(limite=80)
+                    modo_usado = "recomendacion"
+                    st.info("🎯 Modo recomendación activado — consultando todas las fichas técnicas")
+                else:
+                    resultados = buscar_documentos(pregunta, tipo=tipo_filtro)
+                    modo_usado = modo_ia
 
             if not resultados:
                 st.warning("No encontre informacion. Intenta con otras palabras.")
@@ -661,14 +715,14 @@ with tab2:
                 contexto = "\n\n".join([r["contenido"] for r in resultados])
                 col_ctx, col_res = st.columns(2)
                 with col_ctx:
-                    with st.expander(f"📄 {len(resultados)} fragmentos encontrados"):
+                    with st.expander(f"📄 {len(resultados)} fragmentos consultados"):
                         for r in resultados:
                             st.caption(f"📌 {r.get('producto','')} | {r.get('proveedor','')} | Tipo: {r.get('tipo','')}")
                             st.text(r["contenido"][:400])
                             st.divider()
                 with col_res:
                     st.markdown("### 💡 Respuesta")
-                    st.write(responder_con_ia(contexto, pregunta, modo_ia))
+                    st.write(responder_con_ia(contexto, pregunta, modo_usado))
 
 # ==============================================================
 # TAB 3: COTIZADOR — Solo Tejas y Pinturas SW
