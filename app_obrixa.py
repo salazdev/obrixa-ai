@@ -658,7 +658,45 @@ with tab1:
                     else:
                         txt = leer_pdf(archivo)
                         if not txt.strip():
-                            st.error("No se pudo leer el PDF. Si es escaneado usa imagen JPG/PNG.")
+                            # ── PDF escaneado — usar GPT-4o Vision automáticamente ──
+                            st.warning("⚠️ PDF escaneado detectado. Procesando con Vision IA...")
+                            try:
+                                import fitz  # PyMuPDF
+                                archivo.seek(0)
+                                pdf_bytes = archivo.read()
+                                doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+                                texto_total = ""
+                                for num_pagina, pagina in enumerate(doc):
+                                    st.info(f"Procesando página {num_pagina + 1} de {len(doc)}...")
+                                    # Convertir página a imagen
+                                    mat = fitz.Matrix(2, 2)  # zoom 2x para mejor calidad
+                                    pix = pagina.get_pixmap(matrix=mat)
+                                    img_bytes = pix.tobytes("jpeg")
+                                    b64 = base64.b64encode(img_bytes).decode("utf-8")
+                                    # Enviar a GPT-4o Vision
+                                    resp = openai_client.chat.completions.create(
+                                        model="gpt-4o-mini",
+                                        messages=[{"role": "user", "content": [
+                                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                                            {"type": "text", "text": f"Extrae TODO el texto de esta ficha tecnica de {producto_input}. Incluye: nombre del producto, caracteristicas, usos, especificaciones tecnicas, rendimiento, tiempos de secado, superficies compatibles. No omitas ninguna informacion."}
+                                        ]}],
+                                        max_tokens=2000
+                                    )
+                                    texto_pagina = resp.choices[0].message.content
+                                    texto_total += f"\n\n--- Pagina {num_pagina + 1} ---\n{texto_pagina}"
+
+                                if texto_total.strip():
+                                    with st.expander("Ver texto extraido por Vision IA"):
+                                        st.text(texto_total[:3000])
+                                    chunks = dividir_texto(texto_total)
+                                    ok = sum(1 for c in chunks if guardar_documento(c, archivo.name, producto_input, proveedor_input, tipo_contenido))
+                                    st.success(f"✅ {ok} fragmentos guardados desde PDF escaneado via Vision IA")
+                                else:
+                                    st.error("No se pudo extraer texto del PDF escaneado.")
+                            except ImportError:
+                                st.error("Instala PyMuPDF: pip install pymupdf")
+                            except Exception as e:
+                                st.error(f"Error procesando PDF escaneado: {e}")
                         else:
                             chunks = dividir_texto(txt)
                             ok = sum(1 for c in chunks if guardar_documento(c, archivo.name, producto_input, proveedor_input, "ficha_tecnica"))
