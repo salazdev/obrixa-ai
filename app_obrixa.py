@@ -231,7 +231,49 @@ def quitar_tildes(s):
         if unicodedata.category(c) != 'Mn'
     )
 
-def buscar_documentos(pregunta, tipo=None):
+def buscar_documentos(pregunta: str, tipo: str = None):
+    """Búsqueda semántica con pgvector — encuentra por significado, no solo palabras exactas."""
+    try:
+        # Generar embedding de la pregunta
+        resp = openai_client.embeddings.create(
+            model="text-embedding-ada-002",
+            input=pregunta[:8000]
+        )
+        query_vector = resp.data[0].embedding
+
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        if tipo:
+            cur.execute("""
+                SELECT id, contenido, fuente, producto, proveedor, tipo,
+                       1 - (embedding <=> %s::vector) AS similitud
+                FROM embeddings
+                WHERE embedding IS NOT NULL AND tipo = %s
+                ORDER BY embedding <=> %s::vector
+                LIMIT 10
+            """, (query_vector, tipo, query_vector))
+        else:
+            cur.execute("""
+                SELECT id, contenido, fuente, producto, proveedor, tipo,
+                       1 - (embedding <=> %s::vector) AS similitud
+                FROM embeddings
+                WHERE embedding IS NOT NULL
+                ORDER BY embedding <=> %s::vector
+                LIMIT 10
+            """, (query_vector, query_vector))
+
+        rows = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return rows
+    except Exception as e:
+        st.warning(f"Error busqueda semantica: {e}")
+        # Fallback a búsqueda por palabras clave si falla pgvector
+        return buscar_documentos_keywords(pregunta, tipo)
+
+def buscar_documentos_keywords(pregunta: str, tipo: str = None):
+    """Búsqueda por palabras clave — fallback cuando pgvector no está disponible."""
     try:
         stopwords = {"que", "como", "cual", "para", "esto", "esta", "con",
              "los", "las", "del", "una", "por", "cuales", "son",
@@ -242,8 +284,8 @@ def buscar_documentos(pregunta, tipo=None):
             palabras = pregunta.split()[:3]
 
         conn = get_conn()
-        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        todos  = []
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        todos = []
         vistos = set()
         for palabra in palabras[:4]:
             for variante in [palabra, quitar_tildes(palabra)]:
@@ -265,24 +307,42 @@ def buscar_documentos(pregunta, tipo=None):
         conn.close()
         return todos[:10]
     except Exception as e:
-        st.warning(f"Error busqueda: {e}")
+        st.warning(f"Error busqueda keywords: {e}")
         return []
 
-def buscar_todos_fichas(limite=60):
-    """Trae un resumen de TODAS las fichas técnicas para preguntas de recomendación."""
+def buscar_todos_fichas(pregunta: str = None, limite: int = 60):
+    """Búsqueda semántica en todas las fichas técnicas."""
     try:
         conn = get_conn()
-        cur  = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute(
-            "SELECT contenido, producto, fuente FROM embeddings WHERE tipo = 'ficha_tecnica' LIMIT %s",
-            (limite,)
-        )
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+        if pregunta:
+            # Búsqueda semántica ordenada por similitud
+            resp = openai_client.embeddings.create(
+                model="text-embedding-ada-002",
+                input=pregunta[:8000]
+            )
+            query_vector = resp.data[0].embedding
+            cur.execute("""
+                SELECT id, contenido, fuente, producto, proveedor, tipo,
+                       1 - (embedding <=> %s::vector) AS similitud
+                FROM embeddings
+                WHERE tipo = 'ficha_tecnica' AND embedding IS NOT NULL
+                ORDER BY embedding <=> %s::vector
+                LIMIT %s
+            """, (query_vector, query_vector, limite))
+        else:
+            cur.execute(
+                "SELECT contenido, producto, fuente FROM embeddings WHERE tipo = 'ficha_tecnica' LIMIT %s",
+                (limite,)
+            )
+
         rows = [dict(r) for r in cur.fetchall()]
         cur.close()
         conn.close()
         return rows
     except Exception as e:
-        st.warning(f"Error busqueda amplia: {e}")
+        st.warning(f"Error busqueda fichas: {e}")
         return []
 
 def es_pregunta_recomendacion(pregunta: str) -> bool:
@@ -739,10 +799,10 @@ with tab2:
 
             with st.spinner("Buscando en Supabase..."):
                 if es_recomendacion:
-                    # Búsqueda amplia — trae TODAS las fichas para que la IA elija
-                    resultados = buscar_todos_fichas(limite=80)
+                    # Búsqueda semántica en todas las fichas
+                    resultados = buscar_todos_fichas(pregunta=pregunta, limite=15)
                     modo_usado = "recomendacion"
-                    st.info("🎯 Modo recomendación activado — consultando todas las fichas técnicas")
+                    st.info("🎯 Modo recomendación — búsqueda semántica en todas las fichas")
                 else:
                     resultados = buscar_documentos(pregunta, tipo=tipo_filtro)
                     modo_usado = modo_ia
