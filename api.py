@@ -147,37 +147,62 @@ def get_precios_material(material: str):
         return []
 
 def buscar_documentos(pregunta: str, tipo: str = None):
-    stopwords = {
-        "que", "como", "cual", "para", "esto", "esta", "con", "los", "las",
-        "del", "una", "por", "cuales", "son", "tiene", "hay", "dame", "dime",
-        "cuanto", "cuesta", "kilos", "metros", "precio", "vale", "costo"
-    }
-    palabras = [p for p in pregunta.split() if len(p) >= 2 and p.lower() not in stopwords]
-    if not palabras:
-        palabras = pregunta.split()[:3]
-    conn = get_conn()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    todos = []
-    vistos = set()
-    for palabra in palabras[:4]:
-        for variante in [palabra, quitar_tildes(palabra)]:
-            if tipo:
-                cur.execute(
-                    "SELECT * FROM embeddings WHERE contenido ILIKE %s AND tipo = %s LIMIT 8",
-                    (f"%{variante}%", tipo)
-                )
-            else:
-                cur.execute(
-                    "SELECT * FROM embeddings WHERE contenido ILIKE %s LIMIT 8",
-                    (f"%{variante}%",)
-                )
-            for r in cur.fetchall():
-                if r["id"] not in vistos:
-                    vistos.add(r["id"])
-                    todos.append(dict(r))
-    cur.close()
-    conn.close()
-    return todos[:10]
+    """Búsqueda semántica con pgvector."""
+    try:
+        resp = openai_client.embeddings.create(
+            model="text-embedding-ada-002",
+            input=pregunta[:8000]
+        )
+        query_vector = resp.data[0].embedding
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        if tipo:
+            cur.execute("""
+                SELECT id, contenido, fuente, producto, proveedor, tipo,
+                       1 - (embedding <=> %s::vector) AS similitud
+                FROM embeddings
+                WHERE embedding IS NOT NULL AND tipo = %s
+                ORDER BY embedding <=> %s::vector
+                LIMIT 10
+            """, (query_vector, tipo, query_vector))
+        else:
+            cur.execute("""
+                SELECT id, contenido, fuente, producto, proveedor, tipo,
+                       1 - (embedding <=> %s::vector) AS similitud
+                FROM embeddings
+                WHERE embedding IS NOT NULL
+                ORDER BY embedding <=> %s::vector
+                LIMIT 10
+            """, (query_vector, query_vector))
+        rows = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+        return rows
+    except Exception as e:
+        print(f"Error busqueda semantica: {e}")
+        # Fallback keywords
+        stopwords = {"que","como","cual","para","esto","esta","con","los","las","del","una","por"}
+        palabras = [p for p in pregunta.split() if len(p) >= 2 and p.lower() not in stopwords]
+        if not palabras:
+            palabras = pregunta.split()[:3]
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        todos = []
+        vistos = set()
+        for palabra in palabras[:4]:
+            for variante in [palabra, quitar_tildes(palabra)]:
+                q = f"%{variante}%"
+                if tipo:
+                    cur.execute("SELECT * FROM embeddings WHERE contenido ILIKE %s AND tipo = %s LIMIT 8", (q, tipo))
+                else:
+                    cur.execute("SELECT * FROM embeddings WHERE contenido ILIKE %s LIMIT 8", (q,))
+                for r in cur.fetchall():
+                    if r["id"] not in vistos:
+                        vistos.add(r["id"])
+                        todos.append(dict(r))
+        cur.close()
+        conn.close()
+        return todos[:10]
 
 
 # ─────────────────────────────────────────────
