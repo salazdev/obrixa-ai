@@ -26,8 +26,47 @@ from dotenv import load_dotenv
 import os
 load_dotenv()
 
+# ---------------------------
+# LOGIN — ACCESO PROTEGIDO
+# ---------------------------
+APP_USER     = os.getenv("APP_USER", "obrixa_admin")
+APP_PASSWORD = os.getenv("APP_PASSWORD", "Obrixa2024!")
+
+def login():
+    st.markdown("""
+        <div style='max-width:400px; margin:80px auto; padding:40px;
+             background:#0D1B2A; border-radius:16px; border:1px solid #1E88E5;'>
+            <h2 style='color:#F5A623; text-align:center; margin-bottom:8px;'>🏗️ OBRIXA AI</h2>
+            <p style='color:#6A90B0; text-align:center; margin-bottom:24px;'>Panel de gestión interno</p>
+        </div>
+    """, unsafe_allow_html=True)
+
+    with st.form("login_form"):
+        st.markdown("### Acceso")
+        usuario = st.text_input("Usuario", placeholder="obrixa_admin")
+        password = st.text_input("Contraseña", type="password", placeholder="••••••••")
+        submitted = st.form_submit_button("Ingresar", use_container_width=True)
+
+        if submitted:
+            if usuario == APP_USER and password == APP_PASSWORD:
+                st.session_state["autenticado"] = True
+                st.rerun()
+            else:
+                st.error("Usuario o contraseña incorrectos.")
+
+def check_auth():
+    if "autenticado" not in st.session_state or not st.session_state["autenticado"]:
+        login()
+        st.stop()
+
+check_auth()
+
+# ---------------------------
+# A PARTIR DE AQUÍ — APP PROTEGIDA
+# ---------------------------
+
 # ✅ CORRECCIÓN: os.getenv() recibe el NOMBRE de la variable, no el valor
-OPENAI_KEY = os.getenv("OPENAI_KEY") or os.getenv("OPENAI_API_KEY", "")
+OPENAI_KEY   = os.getenv("OPENAI_KEY")
 DB_URL       = os.getenv("DB_URL", "postgresql://postgres.zomdvxmiqqwpxhxklpeb:RxNVnNQo6bWMbbqN@aws-1-us-east-1.pooler.supabase.com:6543/postgres")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "https://zomdvxmiqqwpxhxklpeb.supabase.co")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -469,6 +508,11 @@ with st.sidebar:
     moneda_display = st.selectbox("Moneda", ["COP", "USD", "EUR", "MXN"])
     tasas = obtener_tasas()
     st.caption(f"USD → COP: ${tasas.get('COP', 4100):,.0f}")
+    st.divider()
+    # Botón cerrar sesión
+    if st.button("🔒 Cerrar sesión"):
+        st.session_state["autenticado"] = False
+        st.rerun()
     st.divider()
     st.subheader("📄 Documentos cargados")
     _df_side = listar_documentos()
