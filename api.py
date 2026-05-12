@@ -13,6 +13,10 @@ from fastapi import Request
 from dotenv import load_dotenv
 import os
 load_dotenv()
+import requests as http_requests
+
+N8N_WEBHOOK = "https://obrixa-constructor-n8n.ranspp.easypanel.host/webhook/cotizacion-confirmada"
+TU_WHATSAPP = "++52 3318749058 "  # ← tu número real
 
 OPENAI_KEY = os.getenv("OPENAI_KEY")
 DB_URL = os.getenv("DB_URL", "postgresql://postgres.zomdvxmiqqwpxhxklpeb:RxNVnNQo6bWMbbqN@aws-1-us-east-1.pooler.supabase.com:6543/postgres")
