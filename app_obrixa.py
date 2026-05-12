@@ -632,7 +632,7 @@ PINTURAS_SW = {
 # --------------------------
 COLORES_RAL = {
     "RAL1000": {"grupo": 3, "base": "UD", "observaciones": ""},
-    "RAL1001": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL1001": {"grupo": 2, "base": "UD", "observaciones": ""}
 }
 # ==============================================================
 # UI PRINCIPAL
