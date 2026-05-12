@@ -618,16 +618,6 @@ PINTURAS_SW = {
 }   # ← aquí termina PINTURAS_SW
 
 # --------------------------
-# BASE DE DATOS PINTURAS SW
-# --------------------------
-PINTURAS_SW = {
-    "SuperPaint Exterior": { ... },
-    "SuperPaint Interior": { ... },
-    "Elastomerica": { ... },
-    "Otra Sherwin-Williams": { ... }
-}   # ← línea 620 aprox, aquí termina PINTURAS_SW
-
-# --------------------------
 # BASE DE DATOS COLORES RAL
 # --------------------------
 COLORES_RAL = {
