@@ -1253,7 +1253,7 @@ with tab3:
 
         if categoria == "pintura":
             marca = st.selectbox("Producto Sherwin-Williams", list(PINTURAS_SW.keys()))
-            info  = PINTURAS_SW.get(marca, {})
+            info = PINTURAS_SW.get(marca, dict())
 
             if info:
                 st.info(
