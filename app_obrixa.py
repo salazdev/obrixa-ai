@@ -615,8 +615,37 @@ PINTURAS_SW = {
         "usos": "Consultar ficha tecnica",
         "superficie": "Consultar ficha tecnica"
     }
+}   # ← aquí termina PINTURAS_SW
+
+# --------------------------
+# BASE DE DATOS PINTURAS SW
+# --------------------------
+PINTURAS_SW = {
+    "SuperPaint Exterior": { ... },
+    "SuperPaint Interior": { ... },
+    "Elastomerica": { ... },
+    "Otra Sherwin-Williams": { ... }
+}   # ← línea 620 aprox, aquí termina PINTURAS_SW
+
+# --------------------------
+# BASE DE DATOS COLORES RAL
+# --------------------------
+COLORES_RAL = {        # ← pega aquí todo lo del archivo
+    "RAL1000": ...
+    ...
 }
 
+NOMBRES_RAL = {
+    ...
+}
+
+DESCRIPCIONES_GRUPO = {
+    ...
+}
+
+DESCRIPCIONES_BASE = {
+    ...
+}
 # ==============================================================
 # UI PRINCIPAL
 # ==============================================================
@@ -646,12 +675,9 @@ with st.sidebar:
     if st.button("🔄 Refrescar lista"):
         st.rerun()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📁 Cargar Documentos",
-    "🔍 Consultar",
-    "🧮 Cotizador",
-    "💰 Precios",
-    "🌐 Precios Web"
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+    "📁 Cargar Documentos", "🔍 Consultar", "🧮 Cotizador",
+    "💰 Precios", "🌐 Precios Web", "🎨 Consulta RAL"
 ])
 
 # ==============================================================
@@ -992,3 +1018,511 @@ with tab5:
                     "ficha_tecnica"
                 )
                 st.success("✅ Guardado en Supabase como ficha_tecnica. Ya puedes consultarlo desde Consultar.")
+# ==============================================================
+# TAB 6: CONSULTA RAL
+# ==============================================================
+# INSTRUCCIONES DE INTEGRACIÓN:
+# 1. Agrega COLORES_RAL, NOMBRES_RAL, DESCRIPCIONES_GRUPO, DESCRIPCIONES_BASE
+#    en la sección de constantes (junto a PINTURAS_SW)
+# 2. Cambia la línea de tabs:
+#    tab1,tab2,tab3,tab4,tab5,tab6 = st.tabs([
+#        "📁 Cargar Documentos","🔍 Consultar","🧮 Cotizador",
+#        "💰 Precios","🌐 Precios Web","🎨 Consulta RAL"
+#    ])
+# 3. Pega el bloque "with tab6:" al final del archivo
+
+# ---------------------------
+# CONSTANTES RAL
+# ---------------------------
+COLORES_RAL = {
+    "RAL1000": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL1001": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL1002": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL1003": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1004": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1005": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1006": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1007": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1011": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL1012": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1013": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL1014": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL1015": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL1016": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1017": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1018": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1019": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL1020": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL1021": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1023": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1024": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL1027": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1028": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1032": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1033": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL1034": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL2000": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL2001": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL2002": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL2003": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL2004": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL2008": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL2009": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL2010": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL2011": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL2012": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL3000": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL3001": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL3002": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL3003": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL3004": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL3005": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL3007": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL3009": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL3011": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL3012": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL3013": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL3014": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL3015": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL3016": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL3017": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL3018": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL3020": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL3022": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL3027": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL3031": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL4001": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL4002": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL4003": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL4004": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL4005": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL4006": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL4007": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL4008": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL4009": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL4010": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL5000": {"grupo": 3, "base": "UD", "observaciones": "CAMBIA A GP 2 CON TINTE GIS"},
+    "RAL5001": {"grupo": 3, "base": "UD", "observaciones": "CAMBIA A GP 2 CON TINTE GIS"},
+    "RAL5002": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL5003": {"grupo": 3, "base": "UD", "observaciones": "CAMBIA A GP 2 CON TINTE GIS"},
+    "RAL5004": {"grupo": 3, "base": "UD", "observaciones": "CAMBIA A GP 2 CON TINTE GIS"},
+    "RAL5005": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL5007": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL5008": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL5009": {"grupo": 3, "base": "UD", "observaciones": "CAMBIA A GP 2 CON TINTE GIS"},
+    "RAL5010": {"grupo": 4, "base": "UD", "observaciones": "CAMBIA A GP 3 CON TINTE GIS"},
+    "RAL5011": {"grupo": 3, "base": "UD", "observaciones": "CAMBIA A GP 2 CON TINTE GIS"},
+    "RAL5012": {"grupo": 3, "base": "UD", "observaciones": "CAMBIA A GP 2 CON TINTE GIS"},
+    "RAL5013": {"grupo": 3, "base": "UD", "observaciones": "CAMBIA A GP 2 CON TINTE GIS"},
+    "RAL5014": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL5015": {"grupo": 3, "base": "UD", "observaciones": "CAMBIA A GP 2 CON TINTE GIS"},
+    "RAL5017": {"grupo": 3, "base": "UD", "observaciones": "CAMBIA A GP 2 CON TINTE GIS"},
+    "RAL5018": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL5019": {"grupo": 3, "base": "UD", "observaciones": "CAMBIA A GP 2 CON TINTE GIS"},
+    "RAL5020": {"grupo": 4, "base": "UD", "observaciones": "CAMBIA A GP 3 CON TINTE GIS"},
+    "RAL5021": {"grupo": 3, "base": "UD", "observaciones": "CAMBIA A GP 2 CON TINTE GIS"},
+    "RAL5022": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL5023": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL5024": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL6000": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL6001": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL6002": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL6003": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL6004": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL6005": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL6006": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL6007": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL6008": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL6009": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL6010": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL6011": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL6012": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL6013": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL6014": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL6015": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL6016": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL6017": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL6018": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL6019": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL6020": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL6021": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL6022": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL6024": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL6025": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL6026": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL6027": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL6028": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL6029": {"grupo": 4, "base": "UD", "observaciones": ""},
+    "RAL6032": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL6033": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL6034": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7000": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7001": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7002": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7003": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7004": {"grupo": 1, "base": "UD", "observaciones": ""},
+    "RAL7005": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7006": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7008": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7009": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7010": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7011": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7012": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7013": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7015": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7016": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7021": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7022": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7023": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7024": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7026": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7030": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7031": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7032": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7033": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7034": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7035": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7036": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7037": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7038": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7039": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL7040": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7042": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7043": {"grupo": 2, "base": "WHITE", "observaciones": ""},
+    "RAL7044": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7045": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7046": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL7047": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL8000": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL8001": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL8002": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL8003": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL8004": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL8007": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL8008": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL8011": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL8012": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL8014": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL8015": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL8016": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL8017": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL8019": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL8022": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL8023": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL8024": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL8025": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL8028": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL9001": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL9002": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL9004": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL9005": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL9006": {"grupo": 2, "base": "WHITE", "observaciones": ""},
+    "RAL9010": {"grupo": 1, "base": "WHITE", "observaciones": ""},
+    "RAL9011": {"grupo": 2, "base": "UD", "observaciones": ""},
+    "RAL9017": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL9018": {"grupo": 1, "base": "WHITE", "observaciones": ""}
+}
+
+NOMBRES_RAL = {
+    "RAL1000": "Verde beige",
+    "RAL1001": "Beige",
+    "RAL1002": "Amarillo arena",
+    "RAL1003": "Amarillo señales",
+    "RAL1004": "Amarillo dorado",
+    "RAL1005": "Amarillo miel",
+    "RAL1006": "Amarillo maíz",
+    "RAL1007": "Amarillo narciso",
+    "RAL1011": "Beige pardo",
+    "RAL1012": "Amarillo limón",
+    "RAL1013": "Blanco perla",
+    "RAL1014": "Marfil",
+    "RAL1015": "Marfil claro",
+    "RAL1016": "Amarillo azufre",
+    "RAL1017": "Amarillo azafrán",
+    "RAL1018": "Amarillo zinc",
+    "RAL1019": "Gris beige",
+    "RAL1020": "Amarillo oliva",
+    "RAL1021": "Amarillo colza",
+    "RAL1023": "Amarillo tráfico",
+    "RAL1024": "Amarillo ocre",
+    "RAL1026": "Amarillo brillante",
+    "RAL1027": "Amarillo curry",
+    "RAL1028": "Amarillo melón",
+    "RAL1032": "Amarillo retama",
+    "RAL1033": "Amarillo dalia",
+    "RAL1034": "Amarillo pastel",
+    "RAL2000": "Naranja amarillento",
+    "RAL2001": "Naranja rojizo",
+    "RAL2002": "Naranja bermellón",
+    "RAL2003": "Naranja pastel",
+    "RAL2004": "Naranja puro",
+    "RAL2008": "Naranja salmón claro",
+    "RAL2009": "Naranja tráfico",
+    "RAL2010": "Naranja señales",
+    "RAL2011": "Naranja intenso",
+    "RAL2012": "Naranja salmón",
+    "RAL3000": "Rojo llamas",
+    "RAL3001": "Rojo señales",
+    "RAL3002": "Rojo carmín",
+    "RAL3003": "Rojo rubí",
+    "RAL3004": "Rojo púrpura",
+    "RAL3005": "Rojo vino",
+    "RAL3007": "Rojo negro",
+    "RAL3009": "Rojo óxido",
+    "RAL3011": "Rojo pardo",
+    "RAL3012": "Rojo beige",
+    "RAL3013": "Rojo tomate",
+    "RAL3014": "Rojo antiguo",
+    "RAL3015": "Rosa claro",
+    "RAL3016": "Rojo coral",
+    "RAL3017": "Rosa",
+    "RAL3018": "Rojo fresa",
+    "RAL3020": "Rojo tráfico",
+    "RAL3022": "Rojo salmón",
+    "RAL3027": "Rojo frambuesa",
+    "RAL3031": "Rojo oriente",
+    "RAL4001": "Lila rojizo",
+    "RAL4002": "Rojo violeta",
+    "RAL4003": "Violeta érica",
+    "RAL4004": "Burdeos",
+    "RAL4005": "Lila azulado",
+    "RAL4006": "Violeta tráfico",
+    "RAL4007": "Violeta púrpura",
+    "RAL4008": "Violeta señales",
+    "RAL4009": "Violeta pastel",
+    "RAL4010": "Violeta telemagenta",
+    "RAL5000": "Violeta azulado",
+    "RAL5001": "Verde azulado",
+    "RAL5002": "Azul ultramar",
+    "RAL5003": "Azul zafiro",
+    "RAL5004": "Azul negro",
+    "RAL5005": "Azul señales",
+    "RAL5007": "Azul brillante",
+    "RAL5008": "Azul grisáceo",
+    "RAL5009": "Azul agua",
+    "RAL5010": "Azul genciana",
+    "RAL5011": "Azul acero",
+    "RAL5012": "Azul claro",
+    "RAL5013": "Azul cobalto",
+    "RAL5014": "Azul paloma",
+    "RAL5015": "Azul cielo",
+    "RAL5017": "Azul tráfico",
+    "RAL5018": "Azul turquesa",
+    "RAL5019": "Azul capri",
+    "RAL5020": "Azul océano",
+    "RAL5021": "Azul agua",
+    "RAL5022": "Azul noche",
+    "RAL5023": "Azul lejano",
+    "RAL5024": "Azul pastel",
+    "RAL6000": "Verde pátina",
+    "RAL6001": "Verde esmeralda",
+    "RAL6002": "Verde hoja",
+    "RAL6003": "Verde oliva",
+    "RAL6004": "Verde azulado",
+    "RAL6005": "Verde musgo",
+    "RAL6006": "Verde grisáceo",
+    "RAL6007": "Verde botella",
+    "RAL6008": "Verde parduzco",
+    "RAL6009": "Verde abeto",
+    "RAL6010": "Verde hierba",
+    "RAL6011": "Verde reseda",
+    "RAL6012": "Verde negro",
+    "RAL6013": "Verde caña",
+    "RAL6014": "Verde amarillento",
+    "RAL6015": "Verde negro oliva",
+    "RAL6016": "Verde turquesa",
+    "RAL6017": "Verde mayo",
+    "RAL6018": "Verde amarillo",
+    "RAL6019": "Verde blanco",
+    "RAL6020": "Verde cromo",
+    "RAL6021": "Verde pálido",
+    "RAL6022": "Verde oliva parduzco",
+    "RAL6024": "Verde tráfico",
+    "RAL6025": "Verde helecho",
+    "RAL6026": "Verde opalo",
+    "RAL6027": "Verde claro",
+    "RAL6028": "Verde pino",
+    "RAL6029": "Verde menta",
+    "RAL6032": "Verde señales",
+    "RAL6033": "Verde turquesa menta",
+    "RAL6034": "Verde turquesa pastel",
+    "RAL7000": "Gris ardilla",
+    "RAL7001": "Gris plata",
+    "RAL7002": "Gris oliva",
+    "RAL7003": "Gris musgo",
+    "RAL7004": "Gris señales",
+    "RAL7005": "Gris ratón",
+    "RAL7006": "Gris beige",
+    "RAL7008": "Gris caqui",
+    "RAL7009": "Gris verdoso",
+    "RAL7010": "Gris lona",
+    "RAL7011": "Gris hierro",
+    "RAL7012": "Gris basalto",
+    "RAL7013": "Gris parduzco",
+    "RAL7015": "Gris pizarra",
+    "RAL7016": "Gris antracita",
+    "RAL7021": "Gris negro",
+    "RAL7022": "Gris sombra",
+    "RAL7023": "Gris concreto",
+    "RAL7024": "Gris grafito",
+    "RAL7026": "Gris granito",
+    "RAL7030": "Gris piedra",
+    "RAL7031": "Gris azulado",
+    "RAL7032": "Gris guijarro",
+    "RAL7033": "Gris cemento",
+    "RAL7034": "Gris amarillento",
+    "RAL7035": "Gris claro",
+    "RAL7036": "Gris platino",
+    "RAL7037": "Gris polvo",
+    "RAL7038": "Gris ágata",
+    "RAL7039": "Gris cuarzo",
+    "RAL7040": "Gris ventana",
+    "RAL7042": "Gris tráfico A",
+    "RAL7043": "Gris tráfico B",
+    "RAL7044": "Gris seda",
+    "RAL7045": "Gris telgris 1",
+    "RAL7046": "Gris telgris 2",
+    "RAL7047": "Gris telgris 4",
+    "RAL8000": "Pardo verdoso",
+    "RAL8001": "Pardo ocre",
+    "RAL8002": "Pardo señales",
+    "RAL8003": "Pardo arcilla",
+    "RAL8004": "Pardo cobre",
+    "RAL8007": "Pardo ciervo",
+    "RAL8008": "Pardo oliva",
+    "RAL8011": "Pardo tierra",
+    "RAL8012": "Pardo rojo",
+    "RAL8014": "Pardo sepia",
+    "RAL8015": "Pardo castaño",
+    "RAL8016": "Pardo caoba",
+    "RAL8017": "Pardo chocolate",
+    "RAL8019": "Gris pardo",
+    "RAL8022": "Negro parduzco",
+    "RAL8023": "Pardo anaranjado",
+    "RAL8024": "Pardo beige",
+    "RAL8025": "Pardo pálido",
+    "RAL8028": "Pardo tierra oscuro",
+    "RAL9001": "Blanco crema",
+    "RAL9002": "Blanco grisáceo",
+    "RAL9004": "Negro señales",
+    "RAL9005": "Negro intenso",
+    "RAL9006": "Blanco aluminio",
+    "RAL9010": "Blanco puro",
+    "RAL9011": "Negro grafito",
+    "RAL9017": "Negro tráfico",
+    "RAL9018": "Blanco papiro"
+}
+
+DESCRIPCIONES_GRUPO = {
+    1: ("Economico",      "Colores claros o blancos. Poca cantidad de tinte.",               "🟢"),
+    2: ("Estandar",       "Colores medios o neutros. Cantidad moderada de tinte.",            "🟡"),
+    3: ("Premium",        "Colores intensos. Requieren bastante tinte y precision.",          "🟠"),
+    4: ("Ultra Premium",  "Colores muy intensos. Maxima cantidad de tinte.",                  "🔴"),
+}
+
+DESCRIPCIONES_BASE = {
+    "WHITE": "Base Blanca: para colores claros y pasteles.",
+    "UD":    "Base Ultra Deep: para colores oscuros e intensos. Semi-transparente.",
+}
+
+# ---------------------------
+# TAB 6
+# ---------------------------
+with tab6:
+    import math as _math
+    st.subheader("🎨 Consulta de Color RAL — Sherwin-Williams")
+    st.caption("Consulta grupo y base, calcula galones y genera el mensaje listo para el cliente.")
+
+    col_r1, col_r2 = st.columns([1, 1])
+
+    with col_r1:
+        st.markdown("#### 🔍 Datos del pedido")
+        ral_input = st.text_input(
+            "Codigo RAL", placeholder="Ej: RAL6005  o  6005"
+        ).strip().upper()
+        if ral_input and not ral_input.startswith("RAL"):
+            ral_input = "RAL" + ral_input
+
+        area_ral     = st.number_input("Area a pintar (m2)", min_value=1.0, value=50.0, step=5.0)
+        manos_ral    = st.number_input("Numero de manos",    min_value=1,   value=2,    max_value=4)
+
+        st.markdown("#### 💰 Precio por galon segun grupo (COP)")
+        pg1 = st.number_input("Grupo 1 🟢 Economico",      value=85000,  step=1000)
+        pg2 = st.number_input("Grupo 2 🟡 Estandar",       value=95000,  step=1000)
+        pg3 = st.number_input("Grupo 3 🟠 Premium",        value=115000, step=1000)
+        pg4 = st.number_input("Grupo 4 🔴 Ultra Premium",  value=140000, step=1000)
+        precios_g = {1: pg1, 2: pg2, 3: pg3, 4: pg4}
+        margen_ral = st.slider("Margen OBRIXA (%)", 0, 30, 10)
+
+    with col_r2:
+        if ral_input and ral_input in COLORES_RAL:
+            info    = COLORES_RAL[ral_input]
+            grupo   = info["grupo"]
+            base    = info["base"]
+            obs     = info["observaciones"]
+            nombre  = NOMBRES_RAL.get(ral_input, "Color personalizado")
+            dg      = DESCRIPCIONES_GRUPO[grupo]
+            db      = DESCRIPCIONES_BASE.get(base, base)
+
+            cobertura  = 33 if base == "WHITE" else 28
+            area_total = area_ral * manos_ral
+            galones    = _math.ceil(area_total / cobertura)
+            p_galon    = round(precios_g[grupo] * (1 + margen_ral / 100))
+            p_total    = galones * p_galon
+
+            obs_html = f'<p style="color:#F5A623;font-size:13px;margin:8px 0;">⚠️ {obs}</p>' if obs else ""
+            st.markdown(f"""
+            <div style="background:#1E2D3D;border-radius:12px;padding:20px;
+                        border-left:4px solid #00C2FF;margin-bottom:16px;">
+                <h3 style="color:#00C2FF;margin:0;">{ral_input}</h3>
+                <p style="color:#E8F4FD;font-size:18px;margin:4px 0;">{nombre}</p>
+                <hr style="border-color:#2A3F55;margin:12px 0;">
+                <p style="color:#aaa;margin:4px 0;">
+                    Base: <strong style="color:#fff;">{base}</strong> — {db}</p>
+                <p style="color:#aaa;margin:4px 0;">
+                    Grupo: <strong style="color:#fff;">{dg[2]} {grupo} — {dg[0]}</strong></p>
+                <p style="color:#aaa;font-size:13px;margin:4px 0;">{dg[1]}</p>
+                {obs_html}
+            </div>
+            """, unsafe_allow_html=True)
+
+            st.markdown("#### 📊 Cotizacion")
+            ca, cb, cc = st.columns(3)
+            ca.metric("Galones",        f"{galones} gal")
+            cb.metric("Precio/galon",   f"${p_galon:,.0f}")
+            cc.metric("Total estimado", f"${p_total:,.0f}")
+
+            obs_msg = f"\n\n⚠️ Nota tecnica: {obs}" if obs else ""
+            base_msg = "blanca para tonos claros" if base == "WHITE" else "Ultra Deep para colores intensos"
+            mensaje = f"""Hola! Le comparto la informacion del color que solicito:
+
+🎨 *{ral_input} — {nombre}*
+📋 Grupo {grupo} ({dg[0]}) | Base {base}
+
+Para pintar *{area_ral:.0f} m²* con {manos_ral} mano(s) necesita:
+• *{galones} galones* de pintura
+• Precio por galon: *${p_galon:,.0f} COP*
+• *Total estimado: ${p_total:,.0f} COP*
+
+Este color usa base {base} ({base_msg}), lo que garantiza la fidelidad exacta del tono RAL.{obs_msg}
+
+Desea que le generemos la cotizacion formal? 🏗️ OBRIXA"""
+
+            st.markdown("#### 📱 Mensaje listo para el cliente")
+            st.text_area("Copia y pega en WhatsApp:", value=mensaje, height=300)
+
+        elif ral_input and ral_input not in COLORES_RAL:
+            st.warning(f"El color {ral_input} no esta en la paleta SW. Verifica el codigo.")
+            similares = [r for r in COLORES_RAL if r[:5] == ral_input[:5]]
+            if similares:
+                st.caption(f"Colores similares: {', '.join(similares[:8])}")
+        else:
+            st.info("👈 Ingresa el codigo RAL para ver grupo, base y generar el mensaje al cliente.")
+            with st.expander("📋 Ver todos los 186 colores RAL disponibles"):
+                df_ral = pd.DataFrame([
+                    {"RAL": k, "Nombre": NOMBRES_RAL.get(k,"—"),
+                     "Grupo": v["grupo"], "Base": v["base"],
+                     "Observaciones": v["observaciones"]}
+                    for k, v in COLORES_RAL.items()
+                ])
+                st.dataframe(df_ral, use_container_width=True, hide_index=True)
