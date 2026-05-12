@@ -1,36 +1,38 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 import psycopg2
 import psycopg2.extras
-import pdfplumber
-import unicodedata
 import math
-import io
+import unicodedata
+import requests as http_requests
 from openai import OpenAI
-from fastapi import Request
 from dotenv import load_dotenv
 import os
+import datetime
+
 load_dotenv()
-import requests as http_requests
 
-N8N_WEBHOOK = "https://obrixa-constructor-n8n.ranspp.easypanel.host/webhook/cotizacion-confirmada"
-TU_WHATSAPP = "++52 3318749058 "  # ← tu número real
+# ─────────────────────────────────────────────
+# CONFIGURACION
+# ─────────────────────────────────────────────
 
-OPENAI_KEY = os.getenv("OPENAI_KEY")
-DB_URL = os.getenv("DB_URL", "postgresql://postgres.zomdvxmiqqwpxhxklpeb:RxNVnNQo6bWMbbqN@aws-1-us-east-1.pooler.supabase.com:6543/postgres")
+OPENAI_KEY   = os.getenv("OPENAI_KEY")
+DB_URL       = os.getenv("DB_URL", "postgresql://postgres.zomdvxmiqqwpxhxklpeb:P3lXGNCb4jYlo4rZ@aws-1-us-east-1.pooler.supabase.com:6543/postgres")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
+# n8n y Evolution API
+N8N_WEBHOOK      = "https://obrixa-constructor-n8n.ranspp.easypanel.host/webhook/cotizacion-confirmada"
+EVOLUTION_URL    = "https://obrixa-constructor-evolution-api.ranspp.easypanel.host"
+EVOLUTION_KEY    = "429683C4C977415CAAFCCE10F7D57E11"
+EVOLUTION_INST   = "obrixa-whatsapp"
+TU_WHATSAPP      = "523318749058"  # Tu número sin + para Evolution API
+
 openai_client = OpenAI(api_key=OPENAI_KEY)
 
-app = FastAPI(
-    title="OBRIXA AI API",
-    description="API de materiales de construccion colombianos",
-    version="1.0.0"
-)
-
+app = FastAPI(title="OBRIXA AI API", version="2.0.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 @app.middleware("http")
@@ -44,24 +46,6 @@ async def add_ngrok_header(request, call_next):
 # MODELOS
 # ─────────────────────────────────────────────
 
-class ConsultaRequest(BaseModel):
-    pregunta: str
-    modo: Optional[str] = "general"
-    telefono: Optional[str] = None
-    nombre: Optional[str] = None
-
-class CotizarRequest(BaseModel):
-    categoria: str
-    area: Optional[float] = 0
-    largo: Optional[float] = 0
-    ancho: Optional[float] = 0
-    grosor: Optional[float] = 0
-    cobertura: Optional[float] = 0
-    precio_unitario: Optional[float] = 0
-    rendimiento: Optional[float] = 1
-    traslapo: Optional[float] = 0
-    num_manos: Optional[int] = 1
-
 class WhatsAppRequest(BaseModel):
     mensaje: str
     telefono: str
@@ -69,7 +53,55 @@ class WhatsAppRequest(BaseModel):
 
 
 # ─────────────────────────────────────────────
-# HELPERS DE BASE DE DATOS
+# BASE DE DATOS PINTURAS SW (local, sin DB)
+# ─────────────────────────────────────────────
+
+PINTURAS_SW = {
+    "1": {
+        "nombre": "SuperPaint Exterior SW",
+        "usos": "Fachadas, madera, estuco, fibrocemento, ladrillo, exterior",
+        "cobertura": 33,
+        "manos": 2,
+        "secado": "2 horas al tacto, repinte en 4 horas",
+        "dilucion": "Hasta 10% agua",
+        "acabado": "Mate / Satinado / Semibrillante",
+        "superficies": "Madera, ladrillo, estuco, fibrocemento, acero, galvanizado, OSB, PVC"
+    },
+    "2": {
+        "nombre": "SuperPaint Interior SW",
+        "usos": "Muros interiores, cielorrasos, drywall",
+        "cobertura": 33,
+        "manos": 2,
+        "secado": "30 min al tacto, repinte en 2-4 horas",
+        "dilucion": "Hasta 10% agua",
+        "acabado": "Mate / Satinado / Semibrillante",
+        "superficies": "Drywall, estuco, ladrillo, fibrocemento, OSB, cielos rasos"
+    },
+    "3": {
+        "nombre": "Elastomerica SW",
+        "usos": "Impermeabilizante para fachadas, techos y exterior",
+        "cobertura": 17,
+        "manos": 2,
+        "secado": "4 horas al tacto, repinte en 24 horas",
+        "dilucion": "No diluir",
+        "acabado": "Mate",
+        "superficies": "Concreto, estuco, mamposteria, fibrocemento"
+    },
+    "4": {
+        "nombre": "Otro producto Sherwin-Williams",
+        "usos": "Consultar ficha tecnica especifica",
+        "cobertura": 32,
+        "manos": 2,
+        "secado": "Variable segun producto",
+        "dilucion": "Segun ficha tecnica",
+        "acabado": "Variable",
+        "superficies": "Consultar ficha tecnica"
+    }
+}
+
+
+# ─────────────────────────────────────────────
+# HELPERS DB
 # ─────────────────────────────────────────────
 
 def get_conn():
@@ -138,11 +170,11 @@ def borrar_sesion(telefono: str):
     except:
         pass
 
-def get_precios_material(material: str):
+def get_precios_teja():
     try:
         conn = get_conn()
         cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        cur.execute("SELECT * FROM precios_materiales WHERE material = %s ORDER BY precio", (material,))
+        cur.execute("SELECT * FROM precios_materiales WHERE material = 'teja' ORDER BY precio")
         rows = [dict(r) for r in cur.fetchall()]
         cur.close()
         conn.close()
@@ -150,145 +182,25 @@ def get_precios_material(material: str):
     except:
         return []
 
-def buscar_documentos(pregunta: str, tipo: str = None):
-    """Búsqueda semántica con pgvector."""
+def get_precio_pintura(nombre: str):
     try:
-        resp = openai_client.embeddings.create(
-            model="text-embedding-ada-002",
-            input=pregunta[:8000]
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(
+            "SELECT precio FROM precios_materiales WHERE material = 'pintura' AND descripcion ILIKE %s LIMIT 1",
+            (f"%{nombre}%",)
         )
-        query_vector = resp.data[0].embedding
-        conn = get_conn()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        if tipo:
-            cur.execute("""
-                SELECT id, contenido, fuente, producto, proveedor, tipo,
-                       1 - (embedding <=> %s::vector) AS similitud
-                FROM embeddings
-                WHERE embedding IS NOT NULL AND tipo = %s
-                ORDER BY embedding <=> %s::vector
-                LIMIT 10
-            """, (query_vector, tipo, query_vector))
-        else:
-            cur.execute("""
-                SELECT id, contenido, fuente, producto, proveedor, tipo,
-                       1 - (embedding <=> %s::vector) AS similitud
-                FROM embeddings
-                WHERE embedding IS NOT NULL
-                ORDER BY embedding <=> %s::vector
-                LIMIT 10
-            """, (query_vector, query_vector))
-        rows = [dict(r) for r in cur.fetchall()]
+        row = cur.fetchone()
         cur.close()
         conn.close()
-        return rows
-    except Exception as e:
-        print(f"Error busqueda semantica: {e}")
-        # Fallback keywords
-        stopwords = {"que","como","cual","para","esto","esta","con","los","las","del","una","por"}
-        palabras = [p for p in pregunta.split() if len(p) >= 2 and p.lower() not in stopwords]
-        if not palabras:
-            palabras = pregunta.split()[:3]
-        conn = get_conn()
-        cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-        todos = []
-        vistos = set()
-        for palabra in palabras[:4]:
-            for variante in [palabra, quitar_tildes(palabra)]:
-                q = f"%{variante}%"
-                if tipo:
-                    cur.execute("SELECT * FROM embeddings WHERE contenido ILIKE %s AND tipo = %s LIMIT 8", (q, tipo))
-                else:
-                    cur.execute("SELECT * FROM embeddings WHERE contenido ILIKE %s LIMIT 8", (q,))
-                for r in cur.fetchall():
-                    if r["id"] not in vistos:
-                        vistos.add(r["id"])
-                        todos.append(dict(r))
-        cur.close()
-        conn.close()
-        return todos[:10]
+        return float(row["precio"]) if row and row["precio"] else 0
+    except:
+        return 0
 
 
 # ─────────────────────────────────────────────
-# HELPERS DE LÓGICA
+# HELPERS LOGICA
 # ─────────────────────────────────────────────
-
-def responder_con_ia(contexto: str, pregunta: str, modo: str = "general") -> str:
-    if modo == "ficha":
-        system = (
-            "Eres experto en materiales de construccion colombianos. "
-            "Presenta la ficha tecnica del producto de forma clara y concisa. "
-            "Incluye: caracteristicas principales, dimensiones clave y datos tecnicos importantes. "
-            "Maximo 5 puntos. Usa formato simple sin markdown. Responde en espanol."
-        )
-    else:
-        system = (
-            "Eres experto en materiales de construccion colombianos. "
-            "Usa el contexto para responder con precios, unidades y especificaciones. "
-            "Si hay tablas de precios en el contexto, extrae y muestra los valores. "
-            "Se conciso y directo. Responde en espanol."
-        )
-    resp_ia = openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": system},
-            {"role": "user", "content": f"Contexto:\n{contexto}\n\nPregunta: {pregunta}"}
-        ],
-        max_tokens=500
-    )
-    return resp_ia.choices[0].message.content
-
-def calcular_material(
-    categoria, area=0, largo=0, ancho=0, grosor=0,
-    cobertura=0, precio_unitario=0, rendimiento=1, traslapo=0, num_manos=1
-):
-    if categoria == "pintura":
-        area_total = area * num_manos
-        galones = math.ceil(area_total / cobertura) if cobertura > 0 else 0
-        return {
-            "area_m2": round(area, 2),
-            "manos": num_manos,
-            "galones_necesarios": galones,
-            "precio_unitario": precio_unitario,
-            "precio_total": round(galones * precio_unitario, 2)
-        }
-    elif categoria in ["teja", "ladrillo"]:
-        au = largo * ancho
-        act = area * (1 + traslapo)
-        cant = math.ceil(act / au) if au > 0 else 0
-        return {
-            "area_m2": round(area, 2),
-            "cantidad": cant,
-            "precio_unitario": precio_unitario,
-            "precio_total": round(cant * precio_unitario, 2)
-        }
-    elif categoria == "cemento":
-        vol = area * grosor
-        cant = math.ceil(vol * rendimiento)
-        return {
-            "area_m2": round(area, 2),
-            "volumen_m3": round(vol, 3),
-            "cantidad_sacos": cant,
-            "precio_unitario": precio_unitario,
-            "precio_total": round(cant * precio_unitario, 2)
-        }
-    elif categoria == "acero":
-        cant = math.ceil(largo / 12)
-        return {
-            "longitud_m": largo,
-            "varillas_12m": cant,
-            "precio_unitario": precio_unitario,
-            "precio_total": round(cant * precio_unitario, 2)
-        }
-    return {}
-
-def detectar_material(texto: str):
-    t = quitar_tildes(texto.lower())
-    if any(x in t for x in ["teja", "techo", "cubierta"]):
-        return "teja"
-    if any(x in t for x in ["pintura", "pintar", "galon", "galón", "sherwin", "sw", "superpaint", "elastomerica", "acrolon", "duration"]):
-        return "pintura"
-    return None
 
 def extraer_numero(texto: str):
     clean = ''.join(c for c in texto if c.isdigit() or c in '.,')
@@ -298,65 +210,72 @@ def extraer_numero(texto: str):
     except:
         return None
 
+def r(texto):
+    return {"respuesta": texto, "fragmentos_encontrados": 0, "fuentes": []}
+
 
 # ─────────────────────────────────────────────
-# TEXTOS DE MENÚ REUTILIZABLES
+# NOTIFICACION N8N
+# ─────────────────────────────────────────────
+
+def notificar_n8n(telefono: str, nombre: str, sesion: dict):
+    try:
+        datos = sesion.get("datos", {}) or {}
+        material = sesion.get("material", "No especificado")
+        payload = {
+            "evento": "cotizacion_confirmada",
+            "telefono_cliente": telefono,
+            "nombre_cliente": nombre,
+            "material": material,
+            "descripcion": datos.get("descripcion", material),
+            "area": datos.get("area", 0),
+            "precio_unitario": datos.get("precio_unitario", 0),
+            "galones": datos.get("galones", 0),
+            "total_estimado": datos.get("total_estimado", 0),
+            "timestamp": str(datetime.datetime.now())
+        }
+        http_requests.post(N8N_WEBHOOK, json=payload, timeout=5)
+        print(f"n8n notificado OK: {payload}")
+    except Exception as e:
+        print(f"Error notificando n8n: {e}")
+
+
+# ─────────────────────────────────────────────
+# TEXTOS DE MENU
 # ─────────────────────────────────────────────
 
 MENU_PRINCIPAL = (
-    "Hola! Bienvenido a *OBRIXA AI*.\n\n"
-    "¿Que necesitas hoy?\n\n"
-    "1. Consultar precios\n"
-    "2. Ver ficha tecnica\n"
-    "3. Cotizar materiales\n\n"
-    "Escribe el numero o el nombre de la opcion."
+    "Hola! Bienvenido a *OBRIXA* 🏗️\n\n"
+    "Somos distribuidores de pinturas *Sherwin-Williams* y tejas *JMUNDIAL*.\n\n"
+    "¿En que te puedo ayudar?\n\n"
+    "1️⃣ Ver ficha tecnica de pinturas SW\n"
+    "2️⃣ Cotizar pintura SW\n"
+    "3️⃣ Cotizar teja JMUNDIAL\n\n"
+    "Escribe el numero de la opcion."
 )
 
-MENU_MATERIALES = (
-    "Con gusto te ayudo a cotizar.\n\n"
-    "¿Que material necesitas?\n\n"
-    "1. Teja\n"
-    "2. Pintura Sherwin-Williams\n\n"
-    "Escribe el numero o el nombre del material."
-)
-
-MENU_PRECIOS = (
-    "¿Sobre que producto quieres consultar precios?\n\n"
-    "1. Teja\n"
-    "2. Pintura Sherwin-Williams\n"
-    "3. Todos los productos\n\n"
-    "Escribe el numero o el nombre."
-)
-
-MENU_FICHAS = (
-    "¿De que producto necesitas la ficha tecnica?\n\n"
-    "1. Teja UPVC\n"
-    "2. Teja Policarbonato\n"
-    "3. SuperPaint Exterior\n"
-    "4. SuperPaint Interior\n"
-    "5. Elastomerica\n"
-    "6. Otro producto Sherwin-Williams\n\n"
-    "Escribe el nombre del producto."
+MENU_PINTURAS = (
+    "Estas son nuestras pinturas Sherwin-Williams:\n\n"
+    "1️⃣ SuperPaint Exterior\n"
+    "2️⃣ SuperPaint Interior\n"
+    "3️⃣ Elastomerica (impermeabilizante)\n"
+    "4️⃣ Otro producto SW\n\n"
+    "Escribe el numero del producto."
 )
 
 MENU_POST = (
-    "Perfecto! ¿Que mas necesitas?\n\n"
-    "1. Consultar precios\n"
-    "2. Ver ficha tecnica\n"
-    "3. Cotizar materiales\n\n"
-    "Escribe el numero o la opcion."
+    "Perfecto! ¿Necesitas algo mas?\n\n"
+    "1️⃣ Ver ficha tecnica de pinturas SW\n"
+    "2️⃣ Cotizar pintura SW\n"
+    "3️⃣ Cotizar teja JMUNDIAL\n\n"
+    "Escribe el numero o escribe *chao* para terminar."
 )
 
 DESPEDIDA = (
-    "Gracias por contactar a *OBRIXA AI*. "
-    "Fue un placer ayudarte. "
-    "Cuando necesites materiales de construccion, aqui estamos. "
-    "Hasta pronto!"
+    "Gracias por contactar a *OBRIXA* 🏗️\n"
+    "Fue un placer ayudarte.\n"
+    "Cuando necesites pinturas SW o tejas JMUNDIAL, aqui estamos. Hasta pronto!"
 )
-
-def r(texto):
-    """Atajo para devolver respuesta estándar."""
-    return {"respuesta": texto, "fragmentos_encontrados": 0, "fuentes": []}
 
 
 # ─────────────────────────────────────────────
@@ -365,7 +284,7 @@ def r(texto):
 
 @app.get("/")
 def root():
-    return {"mensaje": "OBRIXA AI API funcionando", "version": "1.0.0"}
+    return {"mensaje": "OBRIXA AI API v2.0 funcionando"}
 
 @app.get("/health")
 def health():
@@ -382,578 +301,293 @@ def health():
 
 
 @app.post("/consultar")
-def consultar(req: ConsultaRequest):
+def consultar(req: WhatsAppRequest):
     try:
-        msg = req.pregunta.lower().strip()
-        telefono = req.telefono or ""
-        nombre = req.nombre or "Cliente"
+        msg        = req.mensaje.strip()
+        msg_lower  = quitar_tildes(msg.lower())
+        telefono   = req.telefono or ""
+        nombre     = req.nombre or "Cliente"
 
         if telefono:
             registrar_cliente(telefono, nombre)
 
-        # ═══════════════════════════════════════════════════════
+        # ══════════════════════════════════════
         # BLOQUE 1 — COMANDOS GLOBALES
-        # Los saludos/SI/NO siempre tienen prioridad.
-        # Los números 1-6 solo actúan si NO hay sesión activa.
-        # ═══════════════════════════════════════════════════════
+        # ══════════════════════════════════════
 
-        # Saludo → menú principal (siempre, rompe cualquier sesión)
-        saludos = ["hola", "buenos", "buenas", "buen dia", "buen día",
-                   "hi", "hey", "inicio", "menu", "menú", "start"]
-        if any(s in msg for s in saludos):
+        # Saludo → menú principal
+        saludos = ["hola", "buenos", "buenas", "buen dia", "hi", "hey",
+                   "inicio", "menu", "start", "ola"]
+        if any(s in msg_lower for s in saludos):
             borrar_sesion(telefono)
             return r(MENU_PRINCIPAL)
 
-        # Confirmación positiva (siempre)
-        if msg in ["si", "sí", "si!", "sí!", "claro", "dale", "ok", "okay"]:
-            borrar_sesion(telefono)
-            return r(MENU_POST)
-
-        # Confirmación negativa (siempre)
-        if msg in ["no", "no gracias", "listo", "gracias", "hasta luego", "chao", "bye"]:
+        # Despedida
+        if any(s in msg_lower for s in ["no gracias", "listo", "gracias", "hasta luego", "chao", "bye", "adios"]):
             borrar_sesion(telefono)
             return r(DESPEDIDA)
 
-        # Leer sesión ANTES de evaluar los números
-        sesion = get_sesion(telefono) if telefono else None
-        estado_actual = sesion["estado"] if sesion else None
+        # Confirmacion positiva → notificar n8n
+        if msg_lower in ["si", "si!", "sí", "sí!", "claro", "dale", "ok", "okay", "confirmo"]:
+            sesion_actual = get_sesion(telefono)
+            if sesion_actual and sesion_actual.get("material"):
+                notificar_n8n(telefono, nombre, sesion_actual)
+            borrar_sesion(telefono)
+            return r(
+                "✅ Perfecto! Un asesor de OBRIXA te contactara pronto para coordinar tu pedido.\n\n"
+                + MENU_POST
+            )
 
-        # Los números del menú principal solo aplican si NO hay sesión activa
-        # (o si la sesión es post-cotización, es decir no hay estado de espera)
-        if estado_actual is None:
-            if msg in ["1", "1.", "consultar precios", "consultar", "precios", "ver precios"]:
-                set_sesion(telefono, "consultando_precios", None, {})
-                return r(MENU_PRECIOS)
+        # ══════════════════════════════════════
+        # BLOQUE 2 — MENÚ PRINCIPAL (sin sesion)
+        # ══════════════════════════════════════
 
-            if msg in ["2", "2.", "ficha", "ficha tecnica", "ficha técnica", "ver ficha", "fichas"]:
-                set_sesion(telefono, "consultando_fichas", None, {})
-                return r(MENU_FICHAS)
+        sesion = get_sesion(telefono)
+        estado = sesion["estado"] if sesion else None
 
-            if msg in ["3", "3.", "cotizar", "cotizacion", "cotización", "quiero cotizar",
-                       "me cotizas", "cuanto sale", "cuánto sale", "necesito calcular"]:
-                set_sesion(telefono, "esperando_material", None, {})
-                return r(MENU_MATERIALES)
-
-            if msg in ["6", "6.", "todos", "todos los productos"]:
-                resultados = buscar_documentos("precios materiales construccion", tipo="precio")
-                if resultados:
-                    contexto = "\n\n".join([r_["contenido"] for r_ in resultados])
-                    respuesta = responder_con_ia(contexto, "lista de precios disponibles", "general")
-                    fuentes = list(set([r_.get("fuente", "") for r_ in resultados]))
-                    return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
-                return r("No encontre precios disponibles en este momento.")
-
-        # ═══════════════════════════════════════════════════════
-        # BLOQUE 2 — BÚSQUEDA DE PRECIOS POR PRODUCTO
-        # Cuando el usuario escribe un nombre de material
-        # sin sesión activa (viene del MENU_PRECIOS)
-        # ═══════════════════════════════════════════════════════
-
-        mat_detectado = detectar_material(req.pregunta)
-
-        if mat_detectado and not sesion:
-            termino = "hierro" if mat_detectado == "acero" else mat_detectado
-            resultados = buscar_documentos(termino, tipo="precio")
-            if resultados:
-                contexto = "\n\n".join([r_["contenido"] for r_ in resultados])
-                respuesta = responder_con_ia(contexto, req.pregunta, "general")
-                fuentes = list(set([r_.get("fuente", "") for r_ in resultados]))
-                return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
-            return r(f"No encontre precios de {termino} en este momento.\n\nEscribe *1* para ver todos los productos disponibles.")
-
-        # ═══════════════════════════════════════════════════════
-        # BLOQUE 3 — FICHA TÉCNICA POR NOMBRE
-        # ═══════════════════════════════════════════════════════
-
-        fichas_kw = ["ficha técnica", "ficha tecnica", "necesito la ficha",
-                     "datos tecnicos", "datos técnicos"]
-        if any(f in msg for f in fichas_kw):
-            resultados = buscar_documentos(req.pregunta, tipo="ficha_tecnica")
-            if not resultados:
-                return r(MENU_FICHAS)
-            contexto = "\n\n".join([r_["contenido"] for r_ in resultados])
-            respuesta = responder_con_ia(contexto, req.pregunta, "ficha")
-            fuentes = list(set([r_.get("fuente", "") for r_ in resultados]))
-            return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
-
-        # Búsqueda de ficha por nombre de producto (sin la frase "ficha tecnica")
-        fichas_nombres = ["teja upvc", "policarbonato", "wpc", "piso deck", "piso spc", "cielo raso"]
-        if any(n in msg for n in fichas_nombres):
-            resultados = buscar_documentos(req.pregunta, tipo="ficha_tecnica")
-            if resultados:
-                contexto = "\n\n".join([r_["contenido"] for r_ in resultados])
-                respuesta = responder_con_ia(contexto, req.pregunta, "ficha")
-                fuentes = list(set([r_.get("fuente", "") for r_ in resultados]))
-                return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
-
-        # ═══════════════════════════════════════════════════════
-        # BLOQUE 4 — MÁQUINA DE ESTADOS (COTIZADOR)
-        # ═══════════════════════════════════════════════════════
-
-        if sesion:
-            estado = sesion["estado"]
-            material = sesion["material"]
-            datos = sesion["datos"] or {}
-
-            # ── Estado: consultando ficha técnica ──
-            if estado == "consultando_fichas":
-                mapa_fichas = {
-                    "1": "teja upvc", "teja upvc": "teja upvc", "upvc": "teja upvc",
-                    "2": "policarbonato", "policarbonato": "policarbonato",
-                    "3": "superpaint exterior", "superpaint exterior": "superpaint exterior",
-                    "4": "superpaint interior", "superpaint interior": "superpaint interior",
-                    "5": "elastomerica", "elastomerica": "elastomerica",
-                    "6": "sherwin", "otro": "sherwin",
-                }
-                termino_ficha = mapa_fichas.get(msg.strip(), None)
-                if termino_ficha is None:
-                    for k, v in mapa_fichas.items():
-                        if k in msg:
-                            termino_ficha = v
-                            break
-                    if termino_ficha is None:
-                        termino_ficha = msg.strip()
-
-                borrar_sesion(telefono)
-                resultados = buscar_documentos(termino_ficha, tipo="ficha_tecnica")
-                if resultados:
-                    contexto = "\n\n".join([r_["contenido"] for r_ in resultados])
-                    respuesta = responder_con_ia(contexto, termino_ficha, "ficha")
-                    fuentes = list(set([r_.get("fuente", "") for r_ in resultados]))
-                    return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
-                return r(f"No encontre ficha tecnica de {termino_ficha}.\n\nEscribe el nombre exacto del producto SW.")
-
-            # ── Estado: consultando precios por producto ──
-            if estado == "consultando_precios":
-                mapa = {
-                    "1": "teja", "teja": "teja",
-                    "2": "pintura", "pintura": "pintura", "sherwin": "pintura", "sw": "pintura",
-                    "3": "todos", "todos": "todos",
-                }
-                termino = mapa.get(msg.strip(), None)
-                if termino is None:
-                    mat_tmp = detectar_material(req.pregunta)
-                    termino = mat_tmp
-
-                if termino == "todos":
-                    resultados = buscar_documentos("precios materiales construccion", tipo="precio")
-                elif termino:
-                    resultados = buscar_documentos(termino, tipo="precio")
-                else:
-                    return r("No reconoci el producto.\n\n" + MENU_PRECIOS)
-
-                borrar_sesion(telefono)
-                if resultados:
-                    contexto = "\n\n".join([r_["contenido"] for r_ in resultados])
-                    respuesta = responder_con_ia(contexto, req.pregunta if termino != "todos" else "lista de precios", "general")
-                    fuentes = list(set([r_.get("fuente", "") for r_ in resultados]))
-                    return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
-                return r(f"No encontre precios de {termino} en este momento.\n\nEscribe *1* para ver el menu de precios.")
-
-            # ── Estado: esperando que el cliente diga el material ──
-            if estado == "esperando_material":
-                if msg in ["1", "1.", "teja", "techo", "cubierta"]:
-                    mat = "teja"
-                elif msg in ["2", "2.", "pintura", "pintar", "sherwin", "sw", "superpaint"]:
-                    mat = "pintura"
-                else:
-                    mat = mat_detectado
-
-                if mat == "teja":
-                    precios = get_precios_material("teja")
-                    if precios:
-                        opciones = "\n".join([
-                            f"{i+1}. {p['descripcion']} - ${p['precio']:,.0f}/und"
-                            for i, p in enumerate(precios)
-                        ])
-                        set_sesion(telefono, "esperando_tipo_teja", "teja", {
-                            "precios": [
-                                {"descripcion": p["descripcion"], "precio": float(p["precio"])}
-                                for p in precios
-                            ]
-                        })
-                        return r(f"Tenemos estas tejas disponibles:\n\n{opciones}\n\n¿Cual necesitas? Escribe el numero.")
-                    else:
-                        borrar_sesion(telefono)
-                        return r("Por el momento no tenemos precios de teja. Contactanos para cotizar.")
-
-                elif mat == "ladrillo":
-                    precios = get_precios_material("ladrillo")
-                    opciones_fijas = [
-                        {"descripcion": "Brick Liso 11 - Liso Arena (23x11x6.5 cm)", "precio": 0, "rendimiento": 56},
-                        {"descripcion": "Brick Liso 11 - Liso Castor (23x11x6.5 cm)", "precio": 0, "rendimiento": 56},
-                        {"descripcion": "Brick Liso 11 - Rustico Arena (23x11x6.5 cm)", "precio": 0, "rendimiento": 56},
-                    ]
-                    for p in reversed(precios):
-                        opciones_fijas.insert(0, {
-                            "descripcion": p["descripcion"],
-                            "precio": float(p["precio"]),
-                            "rendimiento": 56
-                        })
-                    opciones_txt = "\n".join([
-                        f"{i+1}. {o['descripcion']}" +
-                        (f" - ${o['precio']:,.0f}/und" if o["precio"] > 0 else " - Precio a consultar")
-                        for i, o in enumerate(opciones_fijas)
-                    ])
-                    set_sesion(telefono, "esperando_tipo_ladrillo", "ladrillo", {"opciones": opciones_fijas})
-                    return r(f"Tenemos estos ladrillos disponibles:\n\n{opciones_txt}\n\n¿Cual necesitas? Escribe el numero.")
-
-                elif mat == "pintura":
-                    # Mostrar opciones de Sherwin-Williams
-                    opciones_sw = [
-                        {"descripcion": "SuperPaint Exterior SW", "cobertura": 33, "manos": 2},
-                        {"descripcion": "SuperPaint Interior SW", "cobertura": 33, "manos": 2},
-                        {"descripcion": "Elastomerica SW", "cobertura": 17, "manos": 2},
-                        {"descripcion": "Otro producto SW", "cobertura": 32, "manos": 2},
-                    ]
-                    # Agregar precios de DB si existen
-                    precios_db = get_precios_material("pintura")
-                    precio_ref = float(precios_db[0]["precio"]) if precios_db else 0
-                    opciones_txt = "\n".join([
-                        f"{i+1}. {o['descripcion']} | Rinde: {o['cobertura']} m2/galon"
-                        for i, o in enumerate(opciones_sw)
-                    ])
-                    set_sesion(telefono, "esperando_tipo_pintura", "pintura", {
-                        "opciones": opciones_sw,
-                        "precio_ref": precio_ref
-                    })
-                    return r(f"Pinturas Sherwin-Williams disponibles:\n\n{opciones_txt}\n\n¿Cual necesitas? Escribe el numero.")
-
-                elif mat == "cemento":
-                    precios = get_precios_material("cemento")
-                    if precios:
-                        precio_c = float(precios[0]["precio"])
-                        descripcion = precios[0].get("descripcion", "Cemento")
-                        set_sesion(telefono, "esperando_area", "cemento", {
-                            "precio_unitario": precio_c,
-                            "rendimiento": 7.0,
-                            "grosor": 0.10,
-                            "descripcion": descripcion
-                        })
-                        return r(f"*{descripcion}*\nPrecio: ${precio_c:,.0f}/saco | Rendimiento: 7 sacos/m3\n\n¿Cuantos m2 vas a cubrir?\n(Grosor por defecto: 10 cm)")
-                    else:
-                        set_sesion(telefono, "esperando_area", "cemento", {"rendimiento": 7.0, "grosor": 0.10})
-                        return r("Cemento anotado.\n\n¿Cuantos m2 vas a cubrir?")
-
-                elif mat == "acero":
-                    precios = get_precios_material("acero")
-                    if precios:
-                        precio_a = float(precios[0]["precio"])
-                        descripcion = precios[0].get("descripcion", "Varilla de hierro 12m")
-                        set_sesion(telefono, "esperando_longitud", "acero", {
-                            "precio_unitario": precio_a,
-                            "descripcion": descripcion
-                        })
-                        return r(f"*{descripcion}*\nPrecio: ${precio_a:,.0f}/varilla de 12m\n\n¿Cuantos metros lineales de hierro necesitas?")
-                    else:
-                        set_sesion(telefono, "esperando_longitud", "acero", {})
-                        return r("Hierro anotado.\n\n¿Cuantos metros lineales necesitas?")
-
-                else:
-                    return r("No reconoci el producto.\n\n" + MENU_MATERIALES)
-
-            # ── Estado: selección de tipo de teja ──
-            elif estado == "esperando_tipo_teja":
-                precios = datos.get("precios", [])
-                num = extraer_numero(msg)
-                if num is not None:
-                    idx = int(num) - 1
-                    if 0 <= idx < len(precios):
-                        teja = precios[idx]
-                        set_sesion(telefono, "esperando_area", "teja", {
-                            "precio_unitario": teja["precio"],
-                            "descripcion": teja["descripcion"]
-                        })
-                        return r(
-                            f"*{teja['descripcion']}* seleccionada.\n"
-                            f"Precio: ${teja['precio']:,.0f}/und\n\n"
-                            f"¿Cuantos m2 tiene el techo que vas a cubrir?"
-                        )
-                    else:
-                        return r(f"Por favor elige un numero entre 1 y {len(precios)}.")
-                else:
-                    return r("Escribe el numero de la teja. Ejemplo: *1*")
-
-            # ── Estado: selección de tipo de pintura SW ──
-            elif estado == "esperando_tipo_pintura":
-                opciones = datos.get("opciones", [])
-                precio_ref = datos.get("precio_ref", 0)
-                num = extraer_numero(msg)
-                if num is not None:
-                    idx = int(num) - 1
-                    if 0 <= idx < len(opciones):
-                        pintura = opciones[idx]
-                        set_sesion(telefono, "esperando_area", "pintura", {
-                            "precio_unitario": precio_ref,
-                            "cobertura": pintura["cobertura"],
-                            "descripcion": pintura["descripcion"],
-                            "num_manos": pintura["manos"]
-                        })
-                        precio_txt = f"${precio_ref:,.0f}/galon" if precio_ref > 0 else "Precio a consultar"
-                        return r(
-                            f"*{pintura['descripcion']}* seleccionada.\n"
-                            f"Rendimiento: {pintura['cobertura']} m2/galon | {precio_txt}\n"
-                            f"Manos recomendadas: {pintura['manos']}\n\n"
-                            f"¿Cuantos m2 vas a pintar?"
-                        )
-                    else:
-                        return r(f"Por favor elige un numero entre 1 y {len(opciones)}.")
-                else:
-                    return r("Escribe el numero de la pintura. Ejemplo: *1*")
-
-            # ── Estado: recibe el área ──
-            elif estado == "esperando_area":
-                num = extraer_numero(msg)
-                if num is None:
-                    return r("Por favor escribe solo el numero de m2. Ejemplo: *50*")
-
-                area = num
-                precio = datos.get("precio_unitario", 0)
-                descripcion = datos.get("descripcion", (material or "").capitalize())
-
-                if material == "teja":
-                    resultado = calcular_material(
-                        "teja", area=area, largo=11.80, ancho=1.075,
-                        precio_unitario=precio, traslapo=0.1
-                    )
-                    borrar_sesion(telefono)
-                    return r(
-                        f"*Cotizacion {descripcion}*\n\n"
-                        f"Area: {resultado['area_m2']} m2\n"
-                        f"Cantidad: {resultado['cantidad']} tejas\n"
-                        f"Precio unitario: ${precio:,.0f}\n"
-                        f"Total estimado: ${resultado['precio_total']:,.0f}\n\n"
-                        f"Deseas continuar? Responde *SI* para ver mas opciones."
-                    )
-
-                elif material == "ladrillo":
-                    rendimiento_lad = datos.get("rendimiento", 56)
-                    cantidad = math.ceil(area * rendimiento_lad * 1.05)
-                    borrar_sesion(telefono)
-                    if precio > 0:
-                        total = round(cantidad * precio, 2)
-                        return r(
-                            f"*Cotizacion {descripcion}*\n"
-                            f"Proveedor: Terras de San Marino\n\n"
-                            f"Area de muro: {area} m2\n"
-                            f"Rendimiento: {rendimiento_lad} und/m2\n"
-                            f"Ladrillos necesarios: {cantidad} unidades (incluye 5% desperdicio)\n"
-                            f"Precio unitario: ${precio:,.0f}\n"
-                            f"Total estimado: ${total:,.0f}\n\n"
-                            f"Deseas continuar? Responde *SI* para ver mas opciones."
-                        )
-                    else:
-                        return r(
-                            f"*Cotizacion {descripcion}*\n"
-                            f"Proveedor: Terras de San Marino\n\n"
-                            f"Area de muro: {area} m2\n"
-                            f"Rendimiento: {rendimiento_lad} und/m2\n"
-                            f"Ladrillos necesarios: {cantidad} unidades (incluye 5% desperdicio)\n"
-                            f"Precio: A consultar con el proveedor\n\n"
-                            f"¿Deseas continuar? Responde *SI* para ver mas opciones."
-                        )
-
-                elif material == "pintura":
-                    cobertura = datos.get("cobertura", 40)
-                    num_manos = datos.get("num_manos", 2)
-                    if precio > 0:
-                        resultado = calcular_material(
-                            "pintura", area=area, cobertura=cobertura,
-                            precio_unitario=precio, num_manos=num_manos
-                        )
-                        borrar_sesion(telefono)
-                        return r(
-                            f"*Cotizacion {descripcion}*\n\n"
-                            f"Area: {resultado['area_m2']} m2\n"
-                            f"Manos: {resultado['manos']}\n"
-                            f"Galones necesarios: {resultado['galones_necesarios']}\n"
-                            f"Precio/galon: ${precio:,.0f}\n"
-                            f"Total estimado: ${resultado['precio_total']:,.0f}\n\n"
-                            f"Deseas continuar? Responde *SI* para ver mas opciones."
-                        )
-                    else:
-                        datos["area"] = area
-                        set_sesion(telefono, "esperando_precio_pintura", material, datos)
-                        return r(f"{area} m2 anotado.\n\n¿Cual es el precio por galon de pintura?")
-
-                elif material == "cemento":
-                    grosor = datos.get("grosor", 0.10)
-                    rendimiento = datos.get("rendimiento", 7)
-                    if precio > 0:
-                        resultado = calcular_material(
-                            "cemento", area=area, grosor=grosor,
-                            rendimiento=rendimiento, precio_unitario=precio
-                        )
-                        borrar_sesion(telefono)
-                        return r(
-                            f"*Cotizacion {descripcion}*\n\n"
-                            f"Area: {resultado['area_m2']} m2\n"
-                            f"Grosor: {grosor*100:.0f} cm\n"
-                            f"Volumen: {resultado['volumen_m3']} m3\n"
-                            f"Sacos necesarios: {resultado['cantidad_sacos']}\n"
-                            f"Precio/saco: ${precio:,.0f}\n"
-                            f"Total estimado: ${resultado['precio_total']:,.0f}\n\n"
-                            f"Deseas continuar? Responde *SI* para ver mas opciones."
-                        )
-                    else:
-                        datos["area"] = area
-                        set_sesion(telefono, "esperando_precio_cemento", material, datos)
-                        return r(f"{area} m2 anotado.\n\n¿Cual es el precio por saco de cemento?")
-
-                else:
-                    borrar_sesion(telefono)
-                    return r("No reconoci el material. Escribe *3* para volver a cotizar.")
-
-            # ── Estado: recibe metros lineales (hierro) ──
-            elif estado == "esperando_longitud":
-                num = extraer_numero(msg)
-                if num is None:
-                    return r("Por favor escribe solo el numero de metros. Ejemplo: *100*")
-                longitud = num
-                precio = datos.get("precio_unitario", 0)
-                descripcion = datos.get("descripcion", "Varilla de hierro 12m")
-                if precio > 0:
-                    resultado = calcular_material("acero", largo=longitud, precio_unitario=precio)
-                    borrar_sesion(telefono)
-                    return r(
-                        f"*Cotizacion {descripcion}*\n\n"
-                        f"Longitud total: {resultado['longitud_m']} m\n"
-                        f"Varillas de 12m: {resultado['varillas_12m']} unidades\n"
-                        f"Precio/varilla: ${precio:,.0f}\n"
-                        f"Total estimado: ${resultado['precio_total']:,.0f}\n\n"
-                        f"Deseas continuar? Responde *SI* para ver mas opciones."
-                    )
-                else:
-                    datos["largo"] = longitud
-                    set_sesion(telefono, "esperando_precio_acero", material, datos)
-                    return r(f"{longitud} metros anotado.\n\n¿Cual es el precio por varilla de 12m?")
-
-            # ── Estado: pedir precio cuando no está en DB ──
-            elif estado in ["esperando_precio_pintura", "esperando_precio_cemento", "esperando_precio_acero"]:
-                num = extraer_numero(msg)
-                if num is None:
-                    return r("Por favor escribe solo el precio en numeros. Ejemplo: *350000*")
-                precio = num
-                if material == "pintura":
-                    resultado = calcular_material(
-                        "pintura", area=datos["area"],
-                        cobertura=datos.get("cobertura", 40),
-                        precio_unitario=precio,
-                        num_manos=datos.get("num_manos", 2)
-                    )
-                    borrar_sesion(telefono)
-                    return r(
-                        f"*Cotizacion Pintura*\n\n"
-                        f"Area: {resultado['area_m2']} m2\n"
-                        f"Manos: {resultado['manos']}\n"
-                        f"Galones: {resultado['galones_necesarios']}\n"
-                        f"Precio/galon: ${precio:,.0f}\n"
-                        f"Total estimado: ${resultado['precio_total']:,.0f}\n\n"
-                        f"Deseas continuar? Responde *SI* para ver mas opciones."
-                    )
-                elif material == "cemento":
-                    resultado = calcular_material(
-                        "cemento", area=datos["area"],
-                        grosor=datos.get("grosor", 0.10),
-                        rendimiento=datos.get("rendimiento", 7),
-                        precio_unitario=precio
-                    )
-                    borrar_sesion(telefono)
-                    return r(
-                        f"*Cotizacion Cemento*\n\n"
-                        f"Area: {resultado['area_m2']} m2\n"
-                        f"Volumen: {resultado['volumen_m3']} m3\n"
-                        f"Sacos: {resultado['cantidad_sacos']}\n"
-                        f"Precio/saco: ${precio:,.0f}\n"
-                        f"Total estimado: ${resultado['precio_total']:,.0f}\n\n"
-                        f"Deseas continuar? Responde *SI* para ver mas opciones."
-                    )
-                elif material == "acero":
-                    resultado = calcular_material("acero", largo=datos["largo"], precio_unitario=precio)
-                    borrar_sesion(telefono)
-                    return r(
-                        f"*Cotizacion Hierro*\n\n"
-                        f"Longitud: {resultado['longitud_m']} m\n"
-                        f"Varillas 12m: {resultado['varillas_12m']}\n"
-                        f"Precio/varilla: ${precio:,.0f}\n"
-                        f"Total estimado: ${resultado['precio_total']:,.0f}\n\n"
-                        f"Deseas continuar? Responde *SI* para ver mas opciones."
-                    )
-
-        # ═══════════════════════════════════════════════════════
-        # BLOQUE 5 — BÚSQUEDA GENERAL (fallback final)
-        # ═══════════════════════════════════════════════════════
-        resultados = buscar_documentos(req.pregunta, tipo="precio")
-        if resultados:
-            contexto = "\n\n".join([r_["contenido"] for r_ in resultados])
-            respuesta = responder_con_ia(contexto, req.pregunta, req.modo)
-            fuentes = list(set([r_.get("fuente", "") for r_ in resultados]))
-            return {"respuesta": respuesta, "fragmentos_encontrados": len(resultados), "fuentes": fuentes}
-
-        return r(
-            "No encontre informacion sobre ese producto.\n\n"
-            "Intenta con: teja, cemento, acero, piso, cielo raso, WPC.\n\n"
-            "O escribe:\n1. Consultar precios\n2. Ver ficha tecnica\n3. Cotizar materiales"
-        )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/cotizar")
-def cotizar(req: CotizarRequest):
-    try:
-        resultado = calcular_material(
-            categoria=req.categoria, area=req.area, largo=req.largo,
-            ancho=req.ancho, grosor=req.grosor, cobertura=req.cobertura,
-            precio_unitario=req.precio_unitario, rendimiento=req.rendimiento,
-            traslapo=req.traslapo, num_manos=req.num_manos
-        )
-        if not resultado:
-            raise HTTPException(status_code=400, detail="Categoria no valida")
-        return {"cotizacion": resultado}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@app.post("/cargar-pdf")
-async def cargar_pdf(
-    archivo: UploadFile = File(...),
-    producto: str = Form(...),
-    proveedor: str = Form(...)
-):
-    try:
-        contenido = await archivo.read()
-        texto = ""
-        with pdfplumber.open(io.BytesIO(contenido)) as pdf:
-            for p in pdf.pages:
-                t = p.extract_text()
-                if t:
-                    texto += t + "\n"
-        if not texto.strip():
-            raise HTTPException(status_code=400, detail="No se pudo leer el PDF")
-        lineas = [l.strip() for l in texto.splitlines() if l.strip()]
-        chunks = []
-        for i in range(0, len(lineas), 10):
-            grupo = lineas[i:i+10]
-            chunk = "\n".join(grupo)
-            if len(chunk) > 20:
-                chunks.append(chunk)
-        conn = get_conn()
-        cur = conn.cursor()
-        ok = 0
-        for chunk in chunks:
-            try:
-                cur.execute(
-                    "INSERT INTO embeddings (contenido, fuente, producto, proveedor) VALUES (%s,%s,%s,%s)",
-                    (chunk, archivo.filename, producto, proveedor)
+        if estado is None:
+            if msg_lower in ["1", "ficha", "ficha tecnica", "ver ficha"]:
+                set_sesion(telefono, "eligiendo_ficha", None, {})
+                return r(
+                    "📋 *Fichas tecnicas Sherwin-Williams*\n\n"
+                    + MENU_PINTURAS
                 )
-                ok += 1
-            except:
-                pass
-        conn.commit()
-        cur.close()
-        conn.close()
-        return {"mensaje": "PDF procesado correctamente", "fragmentos_guardados": ok, "archivo": archivo.filename}
+
+            if msg_lower in ["2", "cotizar pintura", "pintura", "cotizar sw"]:
+                set_sesion(telefono, "eligiendo_pintura_cotizar", None, {})
+                return r(
+                    "🎨 *Cotizador de pinturas SW*\n\n"
+                    + MENU_PINTURAS
+                )
+
+            if msg_lower in ["3", "teja", "cotizar teja", "jmundial"]:
+                tejas = get_precios_teja()
+                if tejas:
+                    opciones = "\n".join([
+                        f"{i+1}️⃣ {t['descripcion']} — ${float(t['precio']):,.0f}/und"
+                        for i, t in enumerate(tejas)
+                    ])
+                    set_sesion(telefono, "eligiendo_teja", "teja", {
+                        "tejas": [{"descripcion": t["descripcion"], "precio": float(t["precio"])} for t in tejas]
+                    })
+                    return r(f"🏗️ *Tejas JMUNDIAL disponibles:*\n\n{opciones}\n\nEscribe el numero de la teja.")
+                else:
+                    return r("En este momento no tenemos precios de teja disponibles. Escribe *hola* para volver al menu.")
+
+            # Si escribe algo no reconocido sin sesion
+            return r(MENU_PRINCIPAL)
+
+        # ══════════════════════════════════════
+        # BLOQUE 3 — MAQUINA DE ESTADOS
+        # ══════════════════════════════════════
+
+        datos = sesion.get("datos", {}) or {}
+
+        # ── Eligiendo pintura para FICHA TECNICA ──
+        if estado == "eligiendo_ficha":
+            pintura = PINTURAS_SW.get(msg_lower.strip(), None)
+            # Buscar por numero
+            for k, v in PINTURAS_SW.items():
+                if msg_lower.strip() == k:
+                    pintura = v
+                    break
+                if quitar_tildes(v["nombre"].lower()) in msg_lower:
+                    pintura = v
+                    break
+
+            if not pintura:
+                return r(f"No reconoci el producto. {MENU_PINTURAS}")
+
+            borrar_sesion(telefono)
+            ficha = (
+                f"📋 *{pintura['nombre']}*\n\n"
+                f"🏠 *Usos:* {pintura['usos']}\n\n"
+                f"📐 *Rendimiento:* {pintura['cobertura']} m²/galón\n"
+                f"🖌️ *Manos recomendadas:* {pintura['manos']}\n"
+                f"⏱️ *Secado:* {pintura['secado']}\n"
+                f"💧 *Dilución:* {pintura['dilucion']}\n"
+                f"✨ *Acabado:* {pintura['acabado']}\n"
+                f"🧱 *Superficies:* {pintura['superficies']}\n\n"
+                f"¿Deseas cotizar este producto? Escribe *2* o escribe *menu* para volver."
+            )
+            return r(ficha)
+
+        # ── Eligiendo pintura para COTIZAR ──
+        if estado == "eligiendo_pintura_cotizar":
+            pintura = None
+            for k, v in PINTURAS_SW.items():
+                if msg_lower.strip() == k:
+                    pintura = v
+                    pintura["key"] = k
+                    break
+                if quitar_tildes(v["nombre"].lower()) in msg_lower:
+                    pintura = v
+                    pintura["key"] = k
+                    break
+
+            if not pintura:
+                return r(f"No reconoci el producto. {MENU_PINTURAS}")
+
+            # Buscar precio en DB
+            precio_db = get_precio_pintura(pintura["nombre"])
+            precio_txt = f"${precio_db:,.0f}/galon" if precio_db > 0 else "Precio a consultar"
+
+            set_sesion(telefono, "esperando_area_pintura", "pintura", {
+                "descripcion": pintura["nombre"],
+                "cobertura": pintura["cobertura"],
+                "manos": pintura["manos"],
+                "precio_unitario": precio_db
+            })
+            return r(
+                f"*{pintura['nombre']}* seleccionada ✅\n"
+                f"Rendimiento: {pintura['cobertura']} m²/galón | {precio_txt}\n"
+                f"Manos recomendadas: {pintura['manos']}\n\n"
+                f"¿Cuantos *m²* vas a pintar?"
+            )
+
+        # ── Esperando área para pintura ──
+        if estado == "esperando_area_pintura":
+            num = extraer_numero(msg)
+            if num is None:
+                return r("Por favor escribe solo el numero de m². Ejemplo: *80*")
+
+            area       = num
+            cobertura  = datos.get("cobertura", 33)
+            manos      = datos.get("manos", 2)
+            precio     = datos.get("precio_unitario", 0)
+            descripcion = datos.get("descripcion", "Pintura SW")
+
+            area_total = area * manos
+            galones    = math.ceil(area_total / cobertura)
+
+            if precio > 0:
+                total = galones * precio
+                set_sesion(telefono, "esperando_confirmacion", "pintura", {
+                    "descripcion": descripcion,
+                    "area": area,
+                    "galones": galones,
+                    "precio_unitario": precio,
+                    "total_estimado": total
+                })
+                return r(
+                    f"📊 *Cotizacion {descripcion}*\n\n"
+                    f"📐 Area: {area} m²\n"
+                    f"🖌️ Manos: {manos}\n"
+                    f"🪣 Galones necesarios: *{galones} galones*\n"
+                    f"💰 Precio/galon: ${precio:,.0f}\n"
+                    f"💵 *Total estimado: ${total:,.0f} COP*\n\n"
+                    f"¿Deseas que un asesor te contacte para coordinar el pedido?\n"
+                    f"Responde *SI* para confirmar o *NO* para volver al menu."
+                )
+            else:
+                set_sesion(telefono, "esperando_precio_pintura", "pintura", {
+                    **datos, "area": area, "galones": galones
+                })
+                return r(
+                    f"📐 {area} m² anotado.\n"
+                    f"Necesitas aproximadamente *{galones} galones*.\n\n"
+                    f"¿Cual es el precio por galon que te ofrecieron?"
+                )
+
+        # ── Esperando precio de pintura ──
+        if estado == "esperando_precio_pintura":
+            num = extraer_numero(msg)
+            if num is None:
+                return r("Por favor escribe solo el precio. Ejemplo: *115000*")
+
+            precio     = num
+            galones    = datos.get("galones", 0)
+            area       = datos.get("area", 0)
+            descripcion = datos.get("descripcion", "Pintura SW")
+            total      = galones * precio
+
+            set_sesion(telefono, "esperando_confirmacion", "pintura", {
+                "descripcion": descripcion,
+                "area": area,
+                "galones": galones,
+                "precio_unitario": precio,
+                "total_estimado": total
+            })
+            return r(
+                f"📊 *Cotizacion {descripcion}*\n\n"
+                f"📐 Area: {area} m²\n"
+                f"🪣 Galones necesarios: *{galones} galones*\n"
+                f"💰 Precio/galon: ${precio:,.0f}\n"
+                f"💵 *Total estimado: ${total:,.0f} COP*\n\n"
+                f"¿Deseas que un asesor te contacte para coordinar el pedido?\n"
+                f"Responde *SI* para confirmar o *NO* para volver al menu."
+            )
+
+        # ── Eligiendo teja ──
+        if estado == "eligiendo_teja":
+            tejas = datos.get("tejas", [])
+            num = extraer_numero(msg)
+            if num is None or not (1 <= int(num) <= len(tejas)):
+                return r(f"Escribe el numero de la teja entre 1 y {len(tejas)}.")
+
+            teja = tejas[int(num) - 1]
+            set_sesion(telefono, "esperando_area_teja", "teja", {
+                "descripcion": teja["descripcion"],
+                "precio_unitario": teja["precio"]
+            })
+            return r(
+                f"*{teja['descripcion']}* seleccionada ✅\n"
+                f"Precio: ${teja['precio']:,.0f}/und\n\n"
+                f"¿Cuantos *m²* tiene el techo a cubrir?"
+            )
+
+        # ── Esperando área para teja ──
+        if estado == "esperando_area_teja":
+            num = extraer_numero(msg)
+            if num is None:
+                return r("Por favor escribe solo el numero de m². Ejemplo: *50*")
+
+            area        = num
+            precio      = datos.get("precio_unitario", 0)
+            descripcion = datos.get("descripcion", "Teja JMUNDIAL")
+
+            # Calculo teja JMUNDIAL: 11.80m x 1.075m con 10% traslapo
+            largo, ancho, traslapo = 11.80, 1.075, 0.10
+            area_teja = largo * ancho
+            area_con_traslapo = area * (1 + traslapo)
+            cantidad = math.ceil(area_con_traslapo / area_teja)
+            total = cantidad * precio
+
+            set_sesion(telefono, "esperando_confirmacion", "teja", {
+                "descripcion": descripcion,
+                "area": area,
+                "cantidad": cantidad,
+                "precio_unitario": precio,
+                "total_estimado": total
+            })
+            return r(
+                f"📊 *Cotizacion {descripcion}*\n\n"
+                f"📐 Area del techo: {area} m²\n"
+                f"📏 Teja: {largo}m x {ancho}m\n"
+                f"🏗️ Cantidad necesaria: *{cantidad} tejas* (incluye 10% traslapo)\n"
+                f"💰 Precio/teja: ${precio:,.0f}\n"
+                f"💵 *Total estimado: ${total:,.0f} COP*\n\n"
+                f"¿Deseas que un asesor te contacte para coordinar el pedido?\n"
+                f"Responde *SI* para confirmar o *NO* para volver al menu."
+            )
+
+        # ── Esperando confirmacion final ──
+        if estado == "esperando_confirmacion":
+            if msg_lower in ["si", "si!", "sí", "sí!", "claro", "dale", "ok", "okay", "confirmo"]:
+                notificar_n8n(telefono, nombre, sesion)
+                borrar_sesion(telefono)
+                return r(
+                    "✅ *Confirmado!*\n\n"
+                    "Un asesor de *OBRIXA* te contactara pronto para coordinar tu pedido 🏗️\n\n"
+                    "¿Necesitas algo mas?\n\n"
+                    + MENU_POST
+                )
+            else:
+                borrar_sesion(telefono)
+                return r("Entendido. " + MENU_POST)
+
+        # Fallback
+        return r(MENU_PRINCIPAL)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
