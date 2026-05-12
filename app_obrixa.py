@@ -630,22 +630,9 @@ PINTURAS_SW = {
 # --------------------------
 # BASE DE DATOS COLORES RAL
 # --------------------------
-COLORES_RAL = {        # ← pega aquí todo lo del archivo
-    "RAL1000": ...
-    ...
-}
-
-NOMBRES_RAL = {
-    ...
-}
-
-DESCRIPCIONES_GRUPO = {
-    ...
-}
-
-DESCRIPCIONES_BASE = {
-    ...
-}
+COLORES_RAL = {
+    "RAL1000": {"grupo": 3, "base": "UD", "observaciones": ""},
+    "RAL1001": {"grupo": 2, "base": "UD", "observaciones": ""},
 # ==============================================================
 # UI PRINCIPAL
 # ==============================================================
